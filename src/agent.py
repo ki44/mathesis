@@ -1,3 +1,5 @@
+import json
+
 from dotenv import load_dotenv
 from litellm import Message, ModelResponse, completion
 
@@ -9,9 +11,9 @@ load_dotenv()
 
 
 class Agent:
-    def __init__(self, tools: list[ToolFunction]):
+    def __init__(self, tools: list[ToolFunction] | None = None):
         self.tools = tools
-        self._tools_by_name = {tool.tool_schema["function"]["name"]: tool for tool in tools}
+        self._tools_by_name = {tool.tool_schema["function"]["name"]: tool for tool in tools} if tools else {}
         self.config = self.get_configuration()
 
     def get_configuration(self) -> ModelConfiguration:
@@ -23,22 +25,27 @@ class Agent:
         print(f"[COMPLETE] : {json.dumps(response.model_dump(), indent=2)}")
         return response.choices[0].message
 
-    def completion(self, prompt: str, chat_history: list = [], tools: list[ToolFunction] = []) -> Message:
+    def completion(
+        self, prompt: str, chat_history: list | None = None, tools: list[ToolFunction] | None = None
+    ) -> Message:
         # TODO: Add system prompt
+        if chat_history is None:
+            chat_history = []
         # If tools are provided in the call, use them. Otherwise, use the agent's tools.
         tools = tools or self.tools
-        tools_by_name = {tool.tool_schema["function"]["name"]: tool for tool in tools} if tools else self._tools_by_name
+        tools_by_name = {tool.tool_schema["function"]["name"]: tool for tool in tools} if tools else {}
 
         chat_history.append({"role": "user", "content": prompt})
         message = self._completion(
             model=self.config.model_name,
             messages=chat_history,
-            tools=[tool.tool_schema for tool in tools],
+            tools=[tool.tool_schema for tool in tools] if tools else None,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
         )
         chat_history.append(message)
 
-        iteration = 0
-        while iteration < self.config.max_iterations:
+        for _ in range(self.config.max_iterations):
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     fn_name = tool_call.function.name
@@ -59,21 +66,21 @@ class Agent:
                 message = self._completion(
                     model=self.config.model_name,
                     messages=chat_history,
-                    tools=[tool.tool_schema for tool in tools],
+                    tools=[tool.tool_schema for tool in tools] if tools else None,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
                 )
                 chat_history.append(message)
             else:
                 break
-            iteration += 1
-            if iteration >= self.config.max_iterations:
-                print("Reached maximum number of iterations. Stopping.")
+        else:
+            print("Reached maximum number of iterations. Stopping.")
         return message
 
 
 if __name__ == "__main__":
-    import json
-
     agent = Agent(tools=[read, write])
-    input = "hi"  # "Use the write tool tool once. Just test that you can call them."
-    answer = agent.completion(input, tools=[read, write])
-    print(json.dumps(answer.model_dump(), indent=2))
+    prompt = "hi"  # "Use the write tool tool once. Just test that you can call them."
+    answer = agent.completion(prompt)
+    # print(json.dumps(answer.model_dump(), indent=2))
+    print(answer.content)

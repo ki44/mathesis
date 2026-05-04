@@ -14,7 +14,7 @@ class ToolFunction:
         return self._func(*args, **kwargs)
 
 
-def tool(description: str, parameters: type[BaseModel] | None):
+def tool(description: str, parameters: type[BaseModel] | None = None):
     def decorator(func) -> ToolFunction:
         default_parameters = {"type": "object", "properties": {}}
         parameters_schema = parameters.model_json_schema() if parameters else None

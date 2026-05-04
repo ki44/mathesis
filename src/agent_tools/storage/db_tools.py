@@ -7,7 +7,7 @@ from .schemas import ReadParameters, WriteParameters
     description="Writes a value to a document in the database.",
     parameters=WriteParameters,
 )
-def write(document: str, key: str, value: str) -> None:
+async def write(document: str, key: str, value: str) -> None:
     pass
 
 
@@ -15,13 +15,12 @@ def write(document: str, key: str, value: str) -> None:
     description="Reads a value from a document in the database.",
     parameters=ReadParameters,
 )
-def read(document: str, key: str) -> str:
+async def read(document: str, key: str) -> str:
     return "This is a dummy function that will be implemented later."
 
 
 @tool(
     description="Get list of files in the database.",
-    parameters=None,
 )
-def list_files() -> list[str]:
+async def list_files() -> list[str]:
     return []

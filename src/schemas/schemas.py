@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).parent.parent / ".env"
@@ -17,3 +17,8 @@ class ModelConfiguration(BaseSettings):
 
     # Agent loop configuration
     max_iterations: int = Field(5, description="Maximum number of sequential tool calls allowed in a single completion")
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., description="The user's message")
+    conversation_id: str | None = Field(None, description="Conversation ID (optional)")

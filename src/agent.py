@@ -6,7 +6,7 @@ import litellm
 from dotenv import load_dotenv
 from litellm import Message, ModelResponse, acompletion
 
-from agent_tools.storage.db_tools import read, write
+from agent_tools.storage.db_tools import list_course_files, propose_course_update, read_course
 from agent_tools.tools_utils import ToolFunction
 from schemas.schemas import ModelConfiguration
 
@@ -30,7 +30,7 @@ class Agent:
 
     def _initialization(self, chat_history: list | None, prompt: str) -> list:
         """Prepare the initial chat history, add the system prompt if included."""
-        formatted_history = list(chat_history) if chat_history else []
+        formatted_history = chat_history if chat_history is not None else []
 
         if self.system_prompt and not any(m.get("role") == "system" for m in formatted_history if isinstance(m, dict)):
             formatted_history.insert(0, {"role": "system", "content": self.system_prompt})
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     async def main():
         agent = Agent(
             system_prompt=("You are a helpful assistant. "),
-            tools=[read, write],
+            tools=[list_course_files, read_course, propose_course_update],
         )
         prompt = "Utilise tes 2 tools, ce sont des dummy tool mais je veux tester déjà si ça marche comme ça."
         answer = await agent.acompletion(prompt)

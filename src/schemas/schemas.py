@@ -22,3 +22,32 @@ class ModelConfiguration(BaseSettings):
 class ChatRequest(BaseModel):
     message: str = Field(..., description="The user's message")
     conversation_id: str | None = Field(None, description="Conversation ID (optional)")
+
+
+class CourseFile(BaseModel):
+    filename: str
+    content: str
+    updated_at: str
+
+
+class Proposal(BaseModel):
+    filename: str
+    proposed_content: str
+    description: str
+    created_at: str
+
+
+class ApplyChangesRequest(BaseModel):
+    content: str = Field(..., description="The final merged Markdown content to save.")
+
+
+class ConversationSummary(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class DisplayMessage(BaseModel):
+    role: str
+    content: str

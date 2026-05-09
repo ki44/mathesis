@@ -1,12 +1,11 @@
 from pydantic import BaseModel, Field
 
 
-class WriteParameters(BaseModel):
-    document: str = Field(..., description="The name of the document to write to.")
-    key: str = Field(..., description="The key to write the value under.")
-    value: str = Field(..., description="The value to write.")
+class ReadCourseParams(BaseModel):
+    filename: str = Field(..., description="The course file name to read (e.g. 'derivatives.md').")
 
 
-class ReadParameters(BaseModel):
-    document: str = Field(..., description="The name of the document to read from.")
-    key: str = Field(..., description="The key to read the value from.")
+class ProposeCourseUpdateParams(BaseModel):
+    filename: str = Field(..., description="The course file name to create or update (e.g. 'derivatives.md').")
+    content: str = Field(..., description="The full Markdown content to propose for the course file.")
+    description: str = Field(..., description="A short human-readable description of what changed and why.")

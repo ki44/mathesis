@@ -1,7 +1,9 @@
 import json
 import uuid
 from contextlib import asynccontextmanager
+from typing import Any
 
+import aiosqlite
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,7 +71,7 @@ def _to_display_messages(llm_history: list[dict]) -> list[dict]:
     return result
 
 
-async def _fetchone_or_404(db, query: str, params: tuple, detail: str):
+async def _fetchone_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> aiosqlite.Row:
     cursor = await db.execute(query, params)
     row = await cursor.fetchone()
     if row is None:
@@ -77,7 +79,7 @@ async def _fetchone_or_404(db, query: str, params: tuple, detail: str):
     return row
 
 
-async def _execute_or_404(db, query: str, params: tuple, detail: str):
+async def _execute_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> None:
     result = await db.execute(query, params)
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail=detail)

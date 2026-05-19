@@ -1,9 +1,6 @@
 import { create } from 'zustand'
 import type { ChatMessage } from '../types'
 
-let _idCounter = 0
-const nextId = () => String(++_idCounter)
-
 export interface Conversation {
   id: string
   title: string
@@ -19,7 +16,6 @@ interface ChatState {
   fetchConversations: () => Promise<void>
   newConversation: () => string
   selectConversation: (id: string) => Promise<void>
-  setActiveConversationId: (id: string) => void
   deleteConversation: (id: string) => Promise<void>
   addMessage: (convId: string, msg: Omit<ChatMessage, 'id'>) => string
   appendDelta: (convId: string, msgId: string, delta: string) => void
@@ -33,6 +29,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchConversations: async () => {
     const res = await fetch('/api/conversations')
+    if (!res.ok) return
     const summaries = await res.json() as Array<{ id: string; title: string; created_at: string; updated_at: string }>
     const conversations: Conversation[] = summaries.map((s) => ({
       id: s.id,
@@ -71,7 +68,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...c,
               messagesLoaded: true,
               messages: msgs.map((m) => ({
-                id: nextId(),
+                id: crypto.randomUUID(),
                 role: m.role as ChatMessage['role'],
                 content: m.content,
               })),
@@ -79,8 +76,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ),
     }))
   },
-
-  setActiveConversationId: (id) => set({ activeConversationId: id }),
 
   deleteConversation: async (id: string) => {
     // Optimistic update
@@ -96,7 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addMessage: (convId, msg) => {
-    const msgId = nextId()
+    const msgId = crypto.randomUUID()
     set((state) => ({
       conversations: state.conversations.map((c) => {
         if (c.id !== convId) return c

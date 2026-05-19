@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import Editor, { type OnMount } from '@monaco-editor/react'
-import { DiffEditor, useMonaco } from '@monaco-editor/react'
+import Editor, { DiffEditor, useMonaco, type OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
 import type { HunkDecision } from '../types'
@@ -256,26 +255,18 @@ function DiffReview() {
     return result.join('\n')
   }
 
-  async function handleApplySelected() {
+  async function handleApply(decs: HunkDecision[]) {
     if (!activeFilename) return
     setIsApplying(true)
     try {
-      await applyChanges(activeFilename, computeMergedWith(decisions))
+      await applyChanges(activeFilename, computeMergedWith(decs))
     } finally {
       setIsApplying(false)
     }
   }
 
-  async function handleAcceptAll() {
-    if (!activeFilename) return
-    setIsApplying(true)
-    try {
-      const allAccepted = hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const }))
-      await applyChanges(activeFilename, computeMergedWith(allAccepted))
-    } finally {
-      setIsApplying(false)
-    }
-  }
+  const handleApplySelected = () => handleApply(decisions)
+  const handleAcceptAll = () => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))
 
   async function handleRejectAll() {
     if (!activeFilename) return
@@ -340,7 +331,6 @@ function DiffReview() {
             modified={proposal.proposed_content}
             onMount={handleMount}
             options={{
-              readOnly: false,
               renderSideBySide: true,
               minimap: { enabled: false },
               wordWrap: 'on',

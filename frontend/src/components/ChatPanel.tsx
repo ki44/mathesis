@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useChat } from '../hooks/useChat'
 import { useChatStore } from '../store/chatStore'
-import { ChatMessageItem } from './ChatMessage'
+import { ChatMessageItem } from './ChatMessageItem'
 import type { ChatMessage } from '../types'
 
 const NO_MESSAGES: ChatMessage[] = []
@@ -24,6 +24,9 @@ export function ChatPanel() {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
+  const [hoveredNewBtn, setHoveredNewBtn] = useState(false)
+  const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
+  const [hoveredDeleteItem, setHoveredDeleteItem] = useState(false)
 
   const activeConv = conversations.find((c) => c.id === activeConversationId)
 
@@ -91,14 +94,14 @@ export function ChatPanel() {
             style={{
               background: 'none',
               border: 'none',
-              color: '#888',
+              color: hoveredNewBtn ? '#ccc' : '#888',
               cursor: 'pointer',
               fontSize: 18,
               lineHeight: 1,
               padding: '0 2px',
             }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = '#ccc')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = '#888')}
+            onMouseEnter={() => setHoveredNewBtn(true)}
+            onMouseLeave={() => setHoveredNewBtn(false)}
           >
             +
           </button>
@@ -126,7 +129,7 @@ export function ChatPanel() {
                   cursor: 'pointer',
                   fontSize: 12,
                   color: isActive ? '#ffffff' : '#aaaaaa',
-                  background: isActive ? '#094771' : 'transparent',
+                  background: isActive ? '#094771' : hoveredConvId === conv.id ? '#2a2d2e' : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
@@ -135,12 +138,8 @@ export function ChatPanel() {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                 }}
-                onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '#2a2d2e'
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLDivElement).style.background = 'transparent'
-                }}
+                onMouseEnter={() => setHoveredConvId(conv.id)}
+                onMouseLeave={() => setHoveredConvId(null)}
               >
                 <span style={{ opacity: isActive ? 1 : 0, fontSize: 10, flexShrink: 0 }}>▶</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.title}</span>
@@ -253,9 +252,9 @@ export function ChatPanel() {
         >
           <div
             onClick={() => { deleteConversation(contextMenu.convId); setContextMenu(null) }}
-            style={{ padding: '8px 14px', fontSize: 13, color: '#f48771', cursor: 'pointer' }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = '#3a2020')}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
+            style={{ padding: '8px 14px', fontSize: 13, color: '#f48771', cursor: 'pointer', background: hoveredDeleteItem ? '#3a2020' : 'transparent' }}
+            onMouseEnter={() => setHoveredDeleteItem(true)}
+            onMouseLeave={() => setHoveredDeleteItem(false)}
           >
             Supprimer
           </div>

@@ -75,7 +75,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   },
 
   rejectProposal: async (filename) => {
-    await fetch(`/api/proposals/${encodeURIComponent(filename)}`, { method: 'DELETE' })
+    const res = await fetch(`/api/proposals/${encodeURIComponent(filename)}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error('Failed to reject proposal')
     set((state) => {
       const proposals = { ...state.proposals }
       delete proposals[filename]

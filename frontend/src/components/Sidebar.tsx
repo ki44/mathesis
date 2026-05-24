@@ -15,7 +15,7 @@ export function Sidebar() {
 
   const handleDelete = async (filename: string) => {
     setContextMenu(null)
-    if (!window.confirm(`Supprimer le cours "${filename}" ?`)) return
+    if (!window.confirm(`Delete course "${filename}"?`)) return
     await deleteFile(filename)
   }
 
@@ -42,14 +42,14 @@ export function Sidebar() {
           letterSpacing: 1,
         }}
       >
-        Cours
+        Courses
       </div>
 
       {/* File list */}
       <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4 }}>
         {files.length === 0 && (
           <p style={{ color: '#555', fontSize: 12, padding: '12px 14px' }}>
-            Aucun cours pour l'instant
+            No courses yet
           </p>
         )}
         {files.map((file) => {
@@ -78,7 +78,7 @@ export function Sidebar() {
               </span>
               {hasProposal && (
                 <span
-                  title="Modifications en attente"
+                  title="Pending changes"
                   style={{
                     width: 8,
                     height: 8,
@@ -114,7 +114,7 @@ export function Sidebar() {
             onClick={() => handleDelete(contextMenu.filename)}
             className="sidebar-menu-delete"
           >
-            Supprimer le cours
+            Delete course
           </div>
         </div>
       )}

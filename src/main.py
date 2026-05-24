@@ -98,13 +98,12 @@ async def _save_course(db: aiosqlite.Connection, filename: str, content: str) ->
         (content, filename),
         "Course file not found",
     )
-    row = await _fetchone_or_404(
-        db,
+    cursor = await db.execute(
         "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
         (filename,),
-        "Course file not found",
     )
-    return CourseFile.model_validate(dict(row))
+    row = await cursor.fetchone()
+    return CourseFile.model_validate(dict(row))  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

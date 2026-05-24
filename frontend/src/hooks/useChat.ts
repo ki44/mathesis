@@ -25,9 +25,7 @@ export function useChat() {
           body: JSON.stringify({ message: text, conversation_id: convId }),
         })
 
-        if (!res.body) throw new Error('No response body')
-
-        const reader = res.body.getReader()
+        const reader = res.body!.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
 
@@ -59,12 +57,12 @@ export function useChat() {
             } else if (event === 'done') {
               await Promise.all([fetchProposals(), fetchFiles()])
             } else if (event === 'error') {
-              appendDelta(convId, asstId, `\n\n⚠ Erreur : ${payload.message}`)
+              appendDelta(convId, asstId, `\n\n⚠ Error: ${payload.message}`)
             }
           }
         }
       } catch (err) {
-        appendDelta(convId, asstId, `\n\n⚠ Erreur réseau : ${String(err)}`)
+        appendDelta(convId, asstId, `\n\n⚠ Network error: ${String(err)}`)
       } finally {
         setIsStreaming(false)
       }

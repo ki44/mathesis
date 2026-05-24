@@ -91,7 +91,7 @@ export function ChatPanel() {
         <div style={{ maxHeight: 160, overflowY: 'auto' }}>
           {conversations.length === 0 && (
             <p style={{ color: '#555', fontSize: 12, padding: '4px 12px 8px' }}>
-              Aucune conversation
+              No conversations
             </p>
           )}
           {conversations.map((conv) => {
@@ -134,7 +134,7 @@ export function ChatPanel() {
           {activeConv?.title ?? 'Mathesis'}
         </span>
         {isStreaming && (
-          <span style={{ opacity: 0.5, fontSize: 11, flexShrink: 0 }}>en train d'écrire…</span>
+          <span style={{ opacity: 0.5, fontSize: 11, flexShrink: 0 }}>typing…</span>
         )}
       </div>
 
@@ -142,12 +142,12 @@ export function ChatPanel() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 0' }}>
         {!activeConv && (
           <p style={{ color: '#555', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
-            Créez une conversation ou envoyez un message…
+            Start a conversation or send a message…
           </p>
         )}
         {activeConv && messages.length === 0 && (
           <p style={{ color: '#555', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
-            Demandez à Mathesis de créer un cours…
+            Ask Mathesis to create a course…
           </p>
         )}
         {messages.map((msg) => (
@@ -163,7 +163,7 @@ export function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Écrivez un message… (Entrée pour envoyer)"
+            placeholder="Write a message… (Enter to send)"
             disabled={isStreaming}
             rows={3}
             style={{
@@ -220,7 +220,7 @@ export function ChatPanel() {
             onClick={() => { deleteConversation(contextMenu.convId); setContextMenu(null) }}
             className="conv-menu-delete"
           >
-            Supprimer
+            Delete
           </div>
         </div>
       )}

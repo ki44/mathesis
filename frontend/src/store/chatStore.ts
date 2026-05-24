@@ -79,7 +79,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteConversation: async (id: string) => {
-    const snapshot = get().conversations
+    const { conversations: snapshot, activeConversationId: activeSnapshot } = get()
     set((state) => {
       const conversations = state.conversations.filter((c) => c.id !== id)
       const activeConversationId =
@@ -89,7 +89,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { conversations, activeConversationId }
     })
     const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' })
-    if (!res.ok) set({ conversations: snapshot })
+    if (!res.ok) set({ conversations: snapshot, activeConversationId: activeSnapshot })
   },
 
   addMessage: (convId, msg) => {

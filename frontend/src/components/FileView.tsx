@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import Editor, { DiffEditor, useMonaco, type OnMount } from '@monaco-editor/react'
+import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
 import type { HunkDecision } from '../types'
@@ -109,7 +109,7 @@ function PlainEditor() {
         <span style={{ fontSize: 13, color: '#cccccc', flex: 1 }}>
           {activeFile.filename}
           {isDirty && (
-            <span title="Modifications non sauvegardées (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
+            <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
               ●
             </span>
           )}
@@ -148,7 +148,6 @@ function PlainEditor() {
 // ─── Diff editor (proposal present) ──────────────────────────────────────────
 
 function DiffReview() {
-  const monaco = useMonaco()
   const files = useCourseStore((s) => s.files)
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const proposals = useCourseStore((s) => s.proposals)
@@ -157,7 +156,7 @@ function DiffReview() {
 
   const editorRef = useRef<IDiffEditor | null>(null)
   const initializedRef = useRef(false)
-  const widgetsRef = useRef<Monaco.editor.IContentWidget[]>([])
+  const zoneIdsRef = useRef<string[]>([])
   const btnRefsRef = useRef<Array<{ accept: HTMLButtonElement; reject: HTMLButtonElement }>>([])
   const [hunks, setHunks] = useState<ILineChange[]>([])
   const [decisions, setDecisions] = useState<HunkDecision[]>([])  
@@ -193,63 +192,57 @@ function DiffReview() {
 
   // Create per-hunk accept/reject widgets when hunks are initialised
   useEffect(() => {
-    if (!monaco || !editorRef.current || hunks.length === 0) return
+    if (!editorRef.current || hunks.length === 0) return
     const modEditor = editorRef.current.getModifiedEditor()
 
-    widgetsRef.current.forEach((w) => modEditor.removeContentWidget(w))
-    widgetsRef.current = []
     btnRefsRef.current = []
+    modEditor.changeViewZones((accessor) => {
+      zoneIdsRef.current.forEach((id) => accessor.removeZone(id))
+      zoneIdsRef.current = []
 
-    hunks.forEach((hunk, i) => {
-      const lineNumber =
-        hunk.modifiedEndLineNumber > 0
-          ? hunk.modifiedEndLineNumber
-          : hunk.modifiedStartLineNumber > 0
-            ? hunk.modifiedStartLineNumber
-            : 1
+      hunks.forEach((hunk, i) => {
+        const lineNumber =
+          hunk.modifiedEndLineNumber > 0
+            ? hunk.modifiedEndLineNumber
+            : hunk.modifiedStartLineNumber > 0
+              ? hunk.modifiedStartLineNumber
+              : 1
 
-      const container = document.createElement('div')
-      container.style.cssText =
-        'display:flex;gap:6px;padding:2px 8px 4px;justify-content:flex-end;pointer-events:all;'
+        const container = document.createElement('div')
+        container.style.cssText =
+          'position:relative;z-index:100;display:flex;flex-direction:row;gap:6px;padding:2px 8px;justify-content:flex-end;pointer-events:all;'
 
-      const acceptBtn = document.createElement('button')
-      acceptBtn.textContent = 'Accepter'
-      acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
-      acceptBtn.onclick = () =>
-        setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
+        const acceptBtn = document.createElement('button')
+        acceptBtn.textContent = 'Accept'
+        acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
+        acceptBtn.onclick = () =>
+          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
 
-      const rejectBtn = document.createElement('button')
-      rejectBtn.textContent = 'Refuser'
-      rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
-      rejectBtn.onclick = () =>
-        setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
+        const rejectBtn = document.createElement('button')
+        rejectBtn.textContent = 'Reject'
+        rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
+        rejectBtn.onclick = () =>
+          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
 
-      container.appendChild(acceptBtn)
-      container.appendChild(rejectBtn)
-      btnRefsRef.current.push({ accept: acceptBtn, reject: rejectBtn })
+        container.appendChild(acceptBtn)
+        container.appendChild(rejectBtn)
+        btnRefsRef.current.push({ accept: acceptBtn, reject: rejectBtn })
 
-      const widget: Monaco.editor.IContentWidget = {
-        getId: () => `hunk-widget-${i}`,
-        getDomNode: () => container,
-        getPosition: () => ({
-          position: { lineNumber, column: 1 },
-          preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
-        }),
-      }
-
-      modEditor.addContentWidget(widget)
-      widgetsRef.current.push(widget)
+        zoneIdsRef.current.push(accessor.addZone({ afterLineNumber: lineNumber, heightInPx: 26, domNode: container }))
+      })
     })
 
     return () => {
       if (editorRef.current) {
         const mod = editorRef.current.getModifiedEditor()
-        widgetsRef.current.forEach((w) => mod.removeContentWidget(w))
-        widgetsRef.current = []
+        mod.changeViewZones((accessor) => {
+          zoneIdsRef.current.forEach((id) => accessor.removeZone(id))
+        })
+        zoneIdsRef.current = []
         btnRefsRef.current = []
       }
     }
-  }, [monaco, hunks])
+  }, [hunks])
 
   // Sync button visual states without rebuilding widgets
   useEffect(() => {
@@ -275,7 +268,7 @@ function DiffReview() {
 
   if (!activeFile || !proposal) return null
 
-  const anyDecided = decisions.some((d) => d.accepted !== null)
+  const allDecided = decisions.length > 0 && decisions.every((d) => d.accepted !== null)
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -291,16 +284,16 @@ function DiffReview() {
         }}
       >
         <span style={{ fontSize: 12, color: '#888', flex: 1 }}>{activeFile.filename}</span>
-        {anyDecided && (
+        {allDecided && (
           <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
-            {isApplying ? '...' : 'Appliquer la sélection'}
+            {isApplying ? '...' : 'Apply selection'}
           </button>
         )}
         <button onClick={() => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
-          {isApplying ? '...' : 'Tout accepter'}
+          {isApplying ? '...' : 'Accept all'}
         </button>
         <button onClick={() => rejectProposal(activeFilename!)} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
-          Tout refuser
+          Reject all
         </button>
       </div>
 
@@ -367,7 +360,7 @@ export function FileView() {
           fontSize: 14,
         }}
       >
-        Sélectionnez un fichier dans la sidebar
+        Select a file from the sidebar
       </div>
     )
   }

@@ -27,6 +27,27 @@ const WIDGET_BTN_BASE = 'border-radius:4px;color:#fff;padding:2px 10px;font-size
 
 // ─── Pure utility ─────────────────────────────────────────────────────────────
 
+/** Split `content` into segments annotated with the hunk index they belong to (null = unchanged). */
+function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'original' | 'modified') {
+  const lines = content.split('\n')
+  const lineHunk = new Map<number, number>() // 1-based line → hunk index
+  hunks.forEach((hunk, idx) => {
+    const start = side === 'original' ? hunk.originalStartLineNumber : hunk.modifiedStartLineNumber
+    const end   = side === 'original' ? hunk.originalEndLineNumber   : hunk.modifiedEndLineNumber
+    if (end > 0) for (let l = start; l <= end; l++) lineHunk.set(l, idx)
+  })
+  const segments: { text: string; hunkIndex: number | null }[] = []
+  let i = 0
+  while (i < lines.length) {
+    const hunkIdx = lineHunk.get(i + 1) ?? null
+    let j = i
+    while (j < lines.length && (lineHunk.get(j + 1) ?? null) === hunkIdx) j++
+    segments.push({ text: lines.slice(i, j).join('\n'), hunkIndex: hunkIdx })
+    i = j
+  }
+  return segments
+}
+
 function computeMergedContent(
   decs: HunkDecision[],
   hunks: ILineChange[],
@@ -177,6 +198,7 @@ function DiffReview() {
   const [hunks, setHunks] = useState<ILineChange[]>([])
   const [decisions, setDecisions] = useState<HunkDecision[]>([])  
   const [isApplying, setIsApplying] = useState(false)
+  const [isPreview, setIsPreview] = useState(false)
   const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
@@ -187,6 +209,7 @@ function DiffReview() {
     initializedRef.current = false
     setHunks([])
     setDecisions([])
+    setIsPreview(false)
   }, [activeFilename, proposal?.proposed_content])
 
   const handleMount = useCallback((editor: IDiffEditor) => {
@@ -283,6 +306,18 @@ function DiffReview() {
     }
   }
 
+  async function handleAcceptAll() {
+    if (hunks.length > 0) {
+      await handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))
+    } else {
+      // Fallback: Monaco hasn't computed hunks yet (race), apply full proposal
+      if (!activeFilename || !proposal) return
+      setIsApplying(true)
+      try { await applyChanges(activeFilename, proposal.proposed_content) }
+      finally { setIsApplying(false) }
+    }
+  }
+
   if (!activeFile || !proposal) return null
 
   const allDecided = decisions.length > 0 && decisions.every((d) => d.accepted !== null)
@@ -306,11 +341,17 @@ function DiffReview() {
             {isApplying ? '...' : 'Apply selection'}
           </button>
         )}
-        <button onClick={() => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
+        <button onClick={handleAcceptAll} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
           {isApplying ? '...' : 'Accept all'}
         </button>
         <button onClick={() => rejectProposal(activeFilename!)} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
           Reject all
+        </button>
+        <button
+          onClick={() => setIsPreview((v) => !v)}
+          style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
+        >
+          {isPreview ? 'Code' : 'Preview'}
         </button>
       </div>
 
@@ -329,9 +370,12 @@ function DiffReview() {
         </div>
       )}
 
-      {/* Monaco DiffEditor */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0 }}>
+
+
+      {/* Content area — Monaco always mounted; preview panels overlay it when active */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Monaco DiffEditor */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: isPreview ? 'none' : 'auto' }}>
           <DiffEditor
             width="100%"
             height="100%"
@@ -350,6 +394,52 @@ function DiffReview() {
             }}
           />
         </div>
+        {/* Preview panels overlay — z-index:101 sits above Monaco's view zone buttons (z-index:100) */}
+        {isPreview && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 101, display: 'flex', overflow: 'hidden', background: 'var(--bg-1)' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+                  {buildAnnotatedContent(activeFile.content, hunks, 'original').map((seg, i) => (
+                    seg.hunkIndex !== null ? (
+                      <div key={i} style={{ background: 'rgba(220,38,38,0.10)', borderLeft: '3px solid rgba(200,60,60,0.55)', paddingLeft: 8, marginLeft: -11 }}>
+                        <MarkdownRenderer content={seg.text} compact />
+                      </div>
+                    ) : (
+                      <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
+                    )
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+                  {buildAnnotatedContent(proposal.proposed_content, hunks, 'modified').map((seg, i) => {
+                    if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
+                    const dec = decisions[seg.hunkIndex]
+                    return (
+                      <div key={i} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -11, paddingRight: 140 }}>
+                        <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button
+                            onClick={() => setDecisions((prev) => prev.map((d, idx) => idx === seg.hunkIndex ? { ...d, accepted: true } : d))}
+                            style={{ ...BTN_BASE_STYLE, background: dec?.accepted === true ? '#1e7340' : '#2a2a2a', border: `1px solid ${dec?.accepted === true ? '#1e7340' : '#555'}`, padding: '2px 10px', fontSize: 11 }}
+                          >Accept</button>
+                          <button
+                            onClick={() => setDecisions((prev) => prev.map((d, idx) => idx === seg.hunkIndex ? { ...d, accepted: false } : d))}
+                            style={{ ...BTN_BASE_STYLE, background: dec?.accepted === false ? '#6b3030' : '#2a2a2a', border: `1px solid ${dec?.accepted === false ? '#6b3030' : '#555'}`, padding: '2px 10px', fontSize: 11 }}
+                          >Reject</button>
+                        </div>
+                        <MarkdownRenderer content={seg.text} compact />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

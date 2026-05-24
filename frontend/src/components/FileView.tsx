@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
+import { MarkdownRenderer } from './MarkdownRenderer'
+import { useThemeStore } from '../store/themeStore'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
 import type { HunkDecision } from '../types'
@@ -64,8 +66,10 @@ function PlainEditor() {
   const fileRevisions = useCourseStore((s) => s.fileRevisions)
 
   const [isDirty, setIsDirty] = useState(false)
+  const [isPreview, setIsPreview] = useState(false)
   const currentValueRef = useRef<string>('')
   const savedContentRef = useRef<string>('')
+  const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const revision = fileRevisions[activeFilename ?? ''] ?? 0
@@ -99,14 +103,14 @@ function PlainEditor() {
       <div
         style={{
           padding: '8px 16px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          background: '#252526',
+          background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 13, color: '#cccccc', flex: 1 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>
           {activeFile.filename}
           {isDirty && (
             <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
@@ -114,15 +118,26 @@ function PlainEditor() {
             </span>
           )}
         </span>
+        <button
+          onClick={() => setIsPreview((v) => !v)}
+          style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
+        >
+          {isPreview ? 'Edit' : 'Preview'}
+        </button>
       </div>
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {isPreview ? (
+          <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--bg-1)' }}>
+            <MarkdownRenderer content={currentValueRef.current} />
+          </div>
+        ) : (
         <div style={{ position: 'absolute', inset: 0 }}>
           <Editor
             key={`${activeFilename}-${revision}`}
             width="100%"
             height="100%"
             language="markdown"
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             defaultValue={activeFile.content}
             onMount={handleMount}
             onChange={(value) => {
@@ -140,6 +155,7 @@ function PlainEditor() {
             }}
           />
         </div>
+        )}
       </div>
     </div>
   )
@@ -161,6 +177,7 @@ function DiffReview() {
   const [hunks, setHunks] = useState<ILineChange[]>([])
   const [decisions, setDecisions] = useState<HunkDecision[]>([])  
   const [isApplying, setIsApplying] = useState(false)
+  const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const proposal = activeFilename ? proposals[activeFilename] : undefined
@@ -276,14 +293,14 @@ function DiffReview() {
       <div
         style={{
           padding: '8px 16px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          background: '#252526',
+          background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 12, color: '#888', flex: 1 }}>{activeFile.filename}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1 }}>{activeFile.filename}</span>
         {allDecided && (
           <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
             {isApplying ? '...' : 'Apply selection'}
@@ -302,10 +319,10 @@ function DiffReview() {
         <div
           style={{
             padding: '6px 16px',
-            background: '#1e2a3a',
-            borderBottom: '1px solid #333',
+            background: 'var(--bg-info)',
+            borderBottom: '1px solid var(--border)',
             fontSize: 12,
-            color: '#9cdcfe',
+            color: 'var(--text-info)',
           }}
         >
           {proposal.description}
@@ -319,7 +336,7 @@ function DiffReview() {
             width="100%"
             height="100%"
             language="markdown"
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             original={activeFile.content}
             modified={proposal.proposed_content}
             onMount={handleMount}
@@ -356,7 +373,7 @@ export function FileView() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#555',
+          color: 'var(--text-3)',
           fontSize: 14,
         }}
       >

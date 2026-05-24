@@ -15,7 +15,8 @@ export function useChat() {
     async (text: string) => {
       const convId = activeConversationId ?? newConversation()
       addMessage(convId, { role: 'user', content: text })
-      const asstId = addMessage(convId, { role: 'assistant', content: '' })
+      let asstId = addMessage(convId, { role: 'assistant', content: '' })
+      let needNewAsst = false
       setIsStreaming(true)
 
       try {
@@ -51,9 +52,14 @@ export function useChat() {
             const payload = JSON.parse(data) as Record<string, string>
 
             if (event === 'delta') {
+              if (needNewAsst) {
+                asstId = addMessage(convId, { role: 'assistant', content: '' })
+                needNewAsst = false
+              }
               appendDelta(convId, asstId, payload.text ?? '')
             } else if (event === 'tool_call') {
               addMessage(convId, { role: 'tool_call', content: `⚙ ${payload.name}` })
+              needNewAsst = true
             } else if (event === 'done') {
               await Promise.all([fetchProposals(), fetchFiles()])
             } else if (event === 'error') {

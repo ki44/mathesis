@@ -63,12 +63,12 @@ def _to_display_messages(llm_history: list[dict]) -> list[dict]:
             if isinstance(content, str):
                 result.append({"role": "user", "content": content})
         elif role == "assistant":
-            for tc in msg.get("tool_calls") or []:
-                name = (tc.get("function") or {}).get("name", "unknown")
-                result.append({"role": "tool_call", "content": f"{name}"})
             content = msg.get("content")
             if content:
                 result.append({"role": "assistant", "content": content})
+            for tc in msg.get("tool_calls") or []:
+                name = (tc.get("function") or {}).get("name", "unknown")
+                result.append({"role": "tool_call", "content": f"{name}"})
     return result
 
 

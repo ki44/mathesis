@@ -21,6 +21,8 @@ const BTN_BASE_STYLE: React.CSSProperties = {
   transition: 'opacity 0.1s',
 }
 
+const WIDGET_BTN_BASE = 'border-radius:4px;color:#fff;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
+
 // ─── Pure utility ─────────────────────────────────────────────────────────────
 
 function computeMergedContent(
@@ -198,8 +200,6 @@ function DiffReview() {
     widgetsRef.current = []
     btnRefsRef.current = []
 
-    const BASE = 'border-radius:4px;color:#fff;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
-
     hunks.forEach((hunk, i) => {
       const lineNumber =
         hunk.modifiedEndLineNumber > 0
@@ -214,13 +214,13 @@ function DiffReview() {
 
       const acceptBtn = document.createElement('button')
       acceptBtn.textContent = 'Accepter'
-      acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${BASE}`
+      acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
       acceptBtn.onclick = () =>
         setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
 
       const rejectBtn = document.createElement('button')
       rejectBtn.textContent = 'Refuser'
-      rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${BASE}`
+      rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
       rejectBtn.onclick = () =>
         setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
 

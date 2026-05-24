@@ -12,7 +12,7 @@ type ContextMenu = { x: number; y: number; convId: string }
 export function ChatPanel() {
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const activeConv = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId))
+  const activeConv = conversations.find((c) => c.id === activeConversationId)
   const messages = activeConv?.messages ?? NO_MESSAGES
   const newConversation = useChatStore((s) => s.newConversation)
   const selectConversation = useChatStore((s) => s.selectConversation)
@@ -102,6 +102,7 @@ export function ChatPanel() {
                 onClick={() => { void selectConversation(conv.id) }}
                 onContextMenu={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   setContextMenu({ x: e.clientX, y: e.clientY, convId: conv.id })
                 }}
                 className={`conv-item${isActive ? ' active' : ''}`}
@@ -208,7 +209,7 @@ export function ChatPanel() {
             left: contextMenu.x,
             background: '#2d2d2d',
             border: '1px solid #444',
-            borderRadius: 6,
+            borderRadius: 4,
             zIndex: 1000,
             minWidth: 150,
             boxShadow: '0 4px 12px rgba(0,0,0,0.5)',

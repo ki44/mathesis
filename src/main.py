@@ -98,7 +98,6 @@ async def _save_course(db: aiosqlite.Connection, filename: str, content: str) ->
         (content, filename),
         "Course file not found",
     )
-    await db.commit()
     row = await _fetchone_or_404(
         db,
         "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
@@ -198,8 +197,10 @@ async def get_course(filename: str, db: aiosqlite.Connection = Depends(get_db_se
 
 @app.post("/api/courses/{filename:path}", response_model=CourseFile)
 async def apply_changes(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
+    updated = await _save_course(db, filename, body.content)
     await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
-    return await _save_course(db, filename, body.content)
+    await db.commit()
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +241,9 @@ async def reject_proposal(filename: str, db: aiosqlite.Connection = Depends(get_
 
 @app.patch("/api/courses/{filename:path}", response_model=CourseFile)
 async def save_course(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
-    return await _save_course(db, filename, body.content)
+    result = await _save_course(db, filename, body.content)
+    await db.commit()
+    return result
 
 
 @app.delete("/api/courses/{filename:path}", status_code=204)

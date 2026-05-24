@@ -1,9 +1,12 @@
 import json
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
+import aiosqlite
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -69,6 +72,40 @@ def _to_display_messages(llm_history: list[dict]) -> list[dict]:
     return result
 
 
+async def _fetchone_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> aiosqlite.Row:
+    cursor = await db.execute(query, params)
+    row = await cursor.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=detail)
+    return row
+
+
+async def _execute_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> None:
+    result = await db.execute(query, params)
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail=detail)
+
+
+async def get_db_session() -> AsyncGenerator[aiosqlite.Connection, None]:
+    async with get_db() as db:
+        yield db
+
+
+async def _save_course(db: aiosqlite.Connection, filename: str, content: str) -> CourseFile:
+    await _execute_or_404(
+        db,
+        "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
+        (content, filename),
+        "Course file not found",
+    )
+    cursor = await db.execute(
+        "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
+        (filename,),
+    )
+    row = await cursor.fetchone()
+    return CourseFile.model_validate(dict(row))  # type: ignore[arg-type]
+
+
 # ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
@@ -113,33 +150,25 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
 
 @app.get("/api/conversations", response_model=list[ConversationSummary])
-async def get_conversations():
-    async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC"
-        )
-        rows = await cursor.fetchall()
-        return [ConversationSummary.model_validate(dict(r)) for r in rows]
+async def get_conversations(db: aiosqlite.Connection = Depends(get_db_session)):
+    cursor = await db.execute("SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
+    rows = await cursor.fetchall()
+    return [ConversationSummary.model_validate(dict(r)) for r in rows]
 
 
 @app.get("/api/conversations/{conv_id}/messages", response_model=list[DisplayMessage])
-async def get_conversation_messages(conv_id: str):
-    async with get_db() as db:
-        cursor = await db.execute("SELECT llm_history FROM conversations WHERE id = ?", (conv_id,))
-        row = await cursor.fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        history = json.loads(row["llm_history"])
-        return _to_display_messages(history)
+async def get_conversation_messages(conv_id: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    row = await _fetchone_or_404(
+        db, "SELECT llm_history FROM conversations WHERE id = ?", (conv_id,), "Conversation not found"
+    )
+    history = json.loads(row["llm_history"])
+    return _to_display_messages(history)
 
 
 @app.delete("/api/conversations/{conv_id}", status_code=204)
-async def delete_conversation(conv_id: str):
-    async with get_db() as db:
-        result = await db.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        await db.commit()
+async def delete_conversation(conv_id: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    await _execute_or_404(db, "DELETE FROM conversations WHERE id = ?", (conv_id,), "Conversation not found")
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -148,45 +177,29 @@ async def delete_conversation(conv_id: str):
 
 
 @app.get("/api/courses", response_model=list[CourseFile])
-async def get_courses():
-    async with get_db() as db:
-        cursor = await db.execute("SELECT filename, content, updated_at FROM course_files ORDER BY filename")
-        rows = await cursor.fetchall()
-        return [CourseFile.model_validate(dict(r)) for r in rows]
+async def get_courses(db: aiosqlite.Connection = Depends(get_db_session)):
+    cursor = await db.execute("SELECT filename, content, updated_at FROM course_files ORDER BY filename")
+    rows = await cursor.fetchall()
+    return [CourseFile.model_validate(dict(r)) for r in rows]
 
 
 @app.get("/api/courses/{filename:path}", response_model=CourseFile)
-async def get_course(filename: str):
-    async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT filename, content, updated_at FROM course_files WHERE filename = ?", (filename,)
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Course file not found")
-        return CourseFile.model_validate(dict(row))
+async def get_course(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    row = await _fetchone_or_404(
+        db,
+        "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
+        (filename,),
+        "Course file not found",
+    )
+    return CourseFile.model_validate(dict(row))
 
 
 @app.post("/api/courses/{filename:path}", response_model=CourseFile)
-async def apply_changes(filename: str, body: ApplyChangesRequest):
-    async with get_db() as db:
-        result = await db.execute(
-            """
-            UPDATE course_files
-            SET content = ?, updated_at = datetime('now')
-            WHERE filename = ?
-            """,
-            (body.content, filename),
-        )
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Course file not found")
-        await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT filename, content, updated_at FROM course_files WHERE filename = ?", (filename,)
-        )
-        row = await cursor.fetchone()
-        return CourseFile.model_validate(dict(row))  # pyright: ignore[reportArgumentType, reportCallIssue]
+async def apply_changes(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
+    updated = await _save_course(db, filename, body.content)
+    await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
+    await db.commit()
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -195,35 +208,29 @@ async def apply_changes(filename: str, body: ApplyChangesRequest):
 
 
 @app.get("/api/proposals", response_model=list[Proposal])
-async def get_proposals():
-    async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT filename, proposed_content, description, created_at FROM proposals ORDER BY filename"
-        )
-        rows = await cursor.fetchall()
-        return [Proposal.model_validate(dict(r)) for r in rows]
+async def get_proposals(db: aiosqlite.Connection = Depends(get_db_session)):
+    cursor = await db.execute(
+        "SELECT filename, proposed_content, description, created_at FROM proposals ORDER BY filename"
+    )
+    rows = await cursor.fetchall()
+    return [Proposal.model_validate(dict(r)) for r in rows]
 
 
 @app.get("/api/proposals/{filename:path}", response_model=Proposal)
-async def get_proposal(filename: str):
-    async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT filename, proposed_content, description, created_at FROM proposals WHERE filename = ?",
-            (filename,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Proposal not found")
-        return Proposal.model_validate(dict(row))
+async def get_proposal(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    row = await _fetchone_or_404(
+        db,
+        "SELECT filename, proposed_content, description, created_at FROM proposals WHERE filename = ?",
+        (filename,),
+        "Proposal not found",
+    )
+    return Proposal.model_validate(dict(row))
 
 
 @app.delete("/api/proposals/{filename:path}", status_code=204)
-async def reject_proposal(filename: str):
-    async with get_db() as db:
-        result = await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Proposal not found")
-        await db.commit()
+async def reject_proposal(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    await _execute_or_404(db, "DELETE FROM proposals WHERE filename = ?", (filename,), "Proposal not found")
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -232,27 +239,14 @@ async def reject_proposal(filename: str):
 
 
 @app.patch("/api/courses/{filename:path}", response_model=CourseFile)
-async def save_course(filename: str, body: ApplyChangesRequest):
-    async with get_db() as db:
-        result = await db.execute(
-            "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
-            (body.content, filename),
-        )
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Course file not found")
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT filename, content, updated_at FROM course_files WHERE filename = ?", (filename,)
-        )
-        row = await cursor.fetchone()
-        return CourseFile.model_validate(dict(row))  # pyright: ignore[reportCallIssue, reportArgumentType]
+async def save_course(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
+    result = await _save_course(db, filename, body.content)
+    await db.commit()
+    return result
 
 
 @app.delete("/api/courses/{filename:path}", status_code=204)
-async def delete_course(filename: str):
-    async with get_db() as db:
-        result = await db.execute("DELETE FROM course_files WHERE filename = ?", (filename,))
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Course file not found")
-        await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
-        await db.commit()
+async def delete_course(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
+    await _execute_or_404(db, "DELETE FROM course_files WHERE filename = ?", (filename,), "Course file not found")
+    await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
+    await db.commit()

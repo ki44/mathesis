@@ -91,17 +91,13 @@ async def get_db_session() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield db
 
 
-async def _save_course(
-    db: aiosqlite.Connection, filename: str, content: str, *, clear_proposal: bool = False
-) -> CourseFile:
+async def _save_course(db: aiosqlite.Connection, filename: str, content: str) -> CourseFile:
     await _execute_or_404(
         db,
         "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
         (content, filename),
         "Course file not found",
     )
-    if clear_proposal:
-        await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
     await db.commit()
     row = await _fetchone_or_404(
         db,
@@ -156,14 +152,14 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
 
 @app.get("/api/conversations", response_model=list[ConversationSummary])
-async def get_conversations(db=Depends(get_db_session)):
+async def get_conversations(db: aiosqlite.Connection = Depends(get_db_session)):
     cursor = await db.execute("SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
     rows = await cursor.fetchall()
     return [ConversationSummary.model_validate(dict(r)) for r in rows]
 
 
 @app.get("/api/conversations/{conv_id}/messages", response_model=list[DisplayMessage])
-async def get_conversation_messages(conv_id: str, db=Depends(get_db_session)):
+async def get_conversation_messages(conv_id: str, db: aiosqlite.Connection = Depends(get_db_session)):
     row = await _fetchone_or_404(
         db, "SELECT llm_history FROM conversations WHERE id = ?", (conv_id,), "Conversation not found"
     )
@@ -172,7 +168,7 @@ async def get_conversation_messages(conv_id: str, db=Depends(get_db_session)):
 
 
 @app.delete("/api/conversations/{conv_id}", status_code=204)
-async def delete_conversation(conv_id: str, db=Depends(get_db_session)):
+async def delete_conversation(conv_id: str, db: aiosqlite.Connection = Depends(get_db_session)):
     await _execute_or_404(db, "DELETE FROM conversations WHERE id = ?", (conv_id,), "Conversation not found")
     await db.commit()
 
@@ -183,14 +179,14 @@ async def delete_conversation(conv_id: str, db=Depends(get_db_session)):
 
 
 @app.get("/api/courses", response_model=list[CourseFile])
-async def get_courses(db=Depends(get_db_session)):
+async def get_courses(db: aiosqlite.Connection = Depends(get_db_session)):
     cursor = await db.execute("SELECT filename, content, updated_at FROM course_files ORDER BY filename")
     rows = await cursor.fetchall()
     return [CourseFile.model_validate(dict(r)) for r in rows]
 
 
 @app.get("/api/courses/{filename:path}", response_model=CourseFile)
-async def get_course(filename: str, db=Depends(get_db_session)):
+async def get_course(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
     row = await _fetchone_or_404(
         db,
         "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
@@ -201,8 +197,9 @@ async def get_course(filename: str, db=Depends(get_db_session)):
 
 
 @app.post("/api/courses/{filename:path}", response_model=CourseFile)
-async def apply_changes(filename: str, body: ApplyChangesRequest, db=Depends(get_db_session)):
-    return await _save_course(db, filename, body.content, clear_proposal=True)
+async def apply_changes(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
+    await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
+    return await _save_course(db, filename, body.content)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +208,7 @@ async def apply_changes(filename: str, body: ApplyChangesRequest, db=Depends(get
 
 
 @app.get("/api/proposals", response_model=list[Proposal])
-async def get_proposals(db=Depends(get_db_session)):
+async def get_proposals(db: aiosqlite.Connection = Depends(get_db_session)):
     cursor = await db.execute(
         "SELECT filename, proposed_content, description, created_at FROM proposals ORDER BY filename"
     )
@@ -220,7 +217,7 @@ async def get_proposals(db=Depends(get_db_session)):
 
 
 @app.get("/api/proposals/{filename:path}", response_model=Proposal)
-async def get_proposal(filename: str, db=Depends(get_db_session)):
+async def get_proposal(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
     row = await _fetchone_or_404(
         db,
         "SELECT filename, proposed_content, description, created_at FROM proposals WHERE filename = ?",
@@ -231,7 +228,7 @@ async def get_proposal(filename: str, db=Depends(get_db_session)):
 
 
 @app.delete("/api/proposals/{filename:path}", status_code=204)
-async def reject_proposal(filename: str, db=Depends(get_db_session)):
+async def reject_proposal(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
     await _execute_or_404(db, "DELETE FROM proposals WHERE filename = ?", (filename,), "Proposal not found")
     await db.commit()
 
@@ -242,12 +239,12 @@ async def reject_proposal(filename: str, db=Depends(get_db_session)):
 
 
 @app.patch("/api/courses/{filename:path}", response_model=CourseFile)
-async def save_course(filename: str, body: ApplyChangesRequest, db=Depends(get_db_session)):
+async def save_course(filename: str, body: ApplyChangesRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     return await _save_course(db, filename, body.content)
 
 
 @app.delete("/api/courses/{filename:path}", status_code=204)
-async def delete_course(filename: str, db=Depends(get_db_session)):
+async def delete_course(filename: str, db: aiosqlite.Connection = Depends(get_db_session)):
     await _execute_or_404(db, "DELETE FROM course_files WHERE filename = ?", (filename,), "Course file not found")
     await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
     await db.commit()

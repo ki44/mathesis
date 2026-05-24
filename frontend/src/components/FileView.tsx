@@ -70,8 +70,9 @@ function PlainEditor() {
 
   useEffect(() => {
     setIsDirty(false)
-    currentValueRef.current = activeFile?.content ?? ''
-    savedContentRef.current = activeFile?.content ?? ''
+    const content = activeFile?.content ?? ''
+    currentValueRef.current = content
+    savedContentRef.current = content
   }, [activeFilename, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveRef = useRef<() => Promise<void>>(async () => {})
@@ -184,6 +185,7 @@ function DiffReview() {
     }
 
     editor.onDidUpdateDiff(initHunks)
+    // Fallback: onDidUpdateDiff can fire before Monaco populates getLineChanges()
     setTimeout(initHunks, 300)
   }, [])
 
@@ -271,14 +273,6 @@ function DiffReview() {
     }
   }
 
-  const handleApplySelected = () => handleApply(decisions)
-  const handleAcceptAll = () => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))
-
-  async function handleRejectAll() {
-    if (!activeFilename) return
-    await rejectProposal(activeFilename)
-  }
-
   if (!activeFile || !proposal) return null
 
   const anyDecided = decisions.some((d) => d.accepted !== null)
@@ -298,14 +292,14 @@ function DiffReview() {
       >
         <span style={{ fontSize: 12, color: '#888', flex: 1 }}>{activeFile.filename}</span>
         {anyDecided && (
-          <button onClick={handleApplySelected} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
+          <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
             {isApplying ? '...' : 'Appliquer la sélection'}
           </button>
         )}
-        <button onClick={handleAcceptAll} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
+        <button onClick={() => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
           {isApplying ? '...' : 'Tout accepter'}
         </button>
-        <button onClick={handleRejectAll} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
+        <button onClick={() => rejectProposal(activeFilename!)} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
           Tout refuser
         </button>
       </div>

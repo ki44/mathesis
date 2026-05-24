@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '../hooks/useChat'
 import { useChatStore } from '../store/chatStore'
 import { ChatMessageItem } from './ChatMessageItem'
+import { useContextMenuClose } from '../hooks/useContextMenuClose'
 import type { ChatMessage } from '../types'
 
 const NO_MESSAGES: ChatMessage[] = []
@@ -22,20 +23,12 @@ export function ChatPanel() {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+  useContextMenuClose(closeContextMenu)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  useEffect(() => {
-    const close = () => setContextMenu(null)
-    window.addEventListener('click', close)
-    window.addEventListener('contextmenu', close)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-    }
-  }, [])
 
   const handleSend = () => {
     const trimmed = input.trim()

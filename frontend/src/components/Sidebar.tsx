@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useCourseStore } from '../store/courseStore'
+import { useContextMenuClose } from '../hooks/useContextMenuClose'
 
 export function Sidebar() {
   const files = useCourseStore((s) => s.files)
@@ -9,16 +10,8 @@ export function Sidebar() {
   const deleteFile = useCourseStore((s) => s.deleteFile)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filename: string } | null>(null)
-
-  useEffect(() => {
-    const close = () => setContextMenu(null)
-    window.addEventListener('click', close)
-    window.addEventListener('contextmenu', close)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('contextmenu', close)
-    }
-  }, [])
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+  useContextMenuClose(closeContextMenu)
 
   const handleDelete = async (filename: string) => {
     setContextMenu(null)

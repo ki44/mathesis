@@ -8,6 +8,24 @@
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e1e; color: #cccccc; height: 100vh; overflow: hidden; }
       #root { height: 100vh; display: flex; width: 100%; }
+
+      /* Sidebar file list */
+      .sidebar-file { padding: 7px 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; background: transparent; color: #cccccc; font-size: 13px; user-select: none; transition: background 0.1s; }
+      .sidebar-file:hover { background: #2a2d2e; }
+      .sidebar-file.active { color: #ffffff; background: #094771; }
+      .sidebar-file.active:hover { background: #094771; }
+      .sidebar-menu-delete { padding: 6px 16px; cursor: pointer; font-size: 13px; color: #f48c8c; background: transparent; }
+      .sidebar-menu-delete:hover { background: #3a1e1e; }
+
+      /* Chat conversation list */
+      .conv-item { padding: 5px 12px; cursor: pointer; font-size: 12px; color: #aaaaaa; background: transparent; display: flex; align-items: center; gap: 6px; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .conv-item:hover { background: #2a2d2e; }
+      .conv-item.active { color: #ffffff; background: #094771; }
+      .conv-item.active:hover { background: #094771; }
+      .conv-new-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+      .conv-new-btn:hover { color: #ccc; }
+      .conv-menu-delete { padding: 8px 14px; font-size: 13px; color: #f48771; cursor: pointer; background: transparent; }
+      .conv-menu-delete:hover { background: #3a2020; }
     </style>
   </head>
   <body>

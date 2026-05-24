@@ -59,6 +59,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const conv = get().conversations.find((c) => c.id === id)
     if (!conv || conv.messagesLoaded) return
     const res = await fetch(`/api/conversations/${id}/messages`)
+    if (!res.ok) return
     const msgs = await res.json() as Array<{ role: string; content: string }>
     set((state) => ({
       conversations: state.conversations.map((c) =>
@@ -78,7 +79,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteConversation: async (id: string) => {
-    // Optimistic update
+    const snapshot = get().conversations
     set((state) => {
       const conversations = state.conversations.filter((c) => c.id !== id)
       const activeConversationId =
@@ -87,7 +88,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : state.activeConversationId
       return { conversations, activeConversationId }
     })
-    await fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' })
+    if (!res.ok) set({ conversations: snapshot })
   },
 
   addMessage: (convId, msg) => {

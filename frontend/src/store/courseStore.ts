@@ -16,7 +16,7 @@ interface CourseState {
   deleteFile: (filename: string) => Promise<void>
 }
 
-export const useCourseStore = create<CourseState>((set, get) => ({
+export const useCourseStore = create<CourseState>((set) => ({
   files: [],
   activeFilename: null,
   proposals: {},
@@ -38,8 +38,6 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     const proposals: Record<string, Proposal> = {}
     for (const p of list) proposals[p.filename] = p
     set({ proposals })
-    // Also refresh file list so sidebar stays in sync
-    get().fetchFiles()
   },
 
   applyChanges: async (filename, content) => {

@@ -9,8 +9,6 @@ export function Sidebar() {
   const deleteFile = useCourseStore((s) => s.deleteFile)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filename: string } | null>(null)
-  const [hoveredFilename, setHoveredFilename] = useState<string | null>(null)
-  const [hoveredDelete, setHoveredDelete] = useState(false)
 
   useEffect(() => {
     const close = () => setContextMenu(null)
@@ -73,20 +71,7 @@ export function Sidebar() {
                 e.stopPropagation()
                 setContextMenu({ x: e.clientX, y: e.clientY, filename: file.filename })
               }}
-              onMouseEnter={() => setHoveredFilename(file.filename)}
-              onMouseLeave={() => setHoveredFilename(null)}
-              style={{
-                padding: '7px 14px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: isActive ? '#094771' : hoveredFilename === file.filename ? '#2a2d2e' : 'transparent',
-                color: isActive ? '#ffffff' : '#cccccc',
-                fontSize: 13,
-                userSelect: 'none',
-                transition: 'background 0.1s',
-              }}
+              className={`sidebar-file${isActive ? ' active' : ''}`}
             >
               <span
                 style={{
@@ -134,15 +119,7 @@ export function Sidebar() {
         >
           <div
             onClick={() => handleDelete(contextMenu.filename)}
-            onMouseEnter={() => setHoveredDelete(true)}
-            onMouseLeave={() => setHoveredDelete(false)}
-            style={{
-              padding: '6px 16px',
-              cursor: 'pointer',
-              fontSize: 13,
-              color: '#f48c8c',
-              background: hoveredDelete ? '#3a1e1e' : 'transparent',
-            }}
+            className="sidebar-menu-delete"
           >
             Supprimer le cours
           </div>

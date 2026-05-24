@@ -9,6 +9,7 @@ export function useChat() {
   const appendDelta = useChatStore((s) => s.appendDelta)
   const setIsStreaming = useChatStore((s) => s.setIsStreaming)
   const fetchProposals = useCourseStore((s) => s.fetchProposals)
+  const fetchFiles = useCourseStore((s) => s.fetchFiles)
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -56,7 +57,7 @@ export function useChat() {
             } else if (event === 'tool_call') {
               addMessage(convId, { role: 'tool_call', content: `⚙ ${payload.name}` })
             } else if (event === 'done') {
-              await fetchProposals()
+              await Promise.all([fetchProposals(), fetchFiles()])
             } else if (event === 'error') {
               appendDelta(convId, asstId, `\n\n⚠ Erreur : ${payload.message}`)
             }
@@ -68,7 +69,7 @@ export function useChat() {
         setIsStreaming(false)
       }
     },
-    [activeConversationId, newConversation, addMessage, appendDelta, setIsStreaming, fetchProposals],
+    [activeConversationId, newConversation, addMessage, appendDelta, setIsStreaming, fetchProposals, fetchFiles],
   )
 
   return { sendMessage }

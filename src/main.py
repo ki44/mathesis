@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -85,9 +86,30 @@ async def _execute_or_404(db: aiosqlite.Connection, query: str, params: tuple[An
         raise HTTPException(status_code=404, detail=detail)
 
 
-async def get_db_session():
+async def get_db_session() -> AsyncGenerator[aiosqlite.Connection, None]:
     async with get_db() as db:
         yield db
+
+
+async def _save_course(
+    db: aiosqlite.Connection, filename: str, content: str, *, clear_proposal: bool = False
+) -> CourseFile:
+    await _execute_or_404(
+        db,
+        "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
+        (content, filename),
+        "Course file not found",
+    )
+    if clear_proposal:
+        await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
+    await db.commit()
+    row = await _fetchone_or_404(
+        db,
+        "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
+        (filename,),
+        "Course file not found",
+    )
+    return CourseFile.model_validate(dict(row))
 
 
 # ---------------------------------------------------------------------------
@@ -180,21 +202,7 @@ async def get_course(filename: str, db=Depends(get_db_session)):
 
 @app.post("/api/courses/{filename:path}", response_model=CourseFile)
 async def apply_changes(filename: str, body: ApplyChangesRequest, db=Depends(get_db_session)):
-    await _execute_or_404(
-        db,
-        "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
-        (body.content, filename),
-        "Course file not found",
-    )
-    await db.execute("DELETE FROM proposals WHERE filename = ?", (filename,))
-    await db.commit()
-    row = await _fetchone_or_404(
-        db,
-        "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
-        (filename,),
-        "Course file not found",
-    )
-    return CourseFile.model_validate(dict(row))
+    return await _save_course(db, filename, body.content, clear_proposal=True)
 
 
 # ---------------------------------------------------------------------------
@@ -235,20 +243,7 @@ async def reject_proposal(filename: str, db=Depends(get_db_session)):
 
 @app.patch("/api/courses/{filename:path}", response_model=CourseFile)
 async def save_course(filename: str, body: ApplyChangesRequest, db=Depends(get_db_session)):
-    await _execute_or_404(
-        db,
-        "UPDATE course_files SET content = ?, updated_at = datetime('now') WHERE filename = ?",
-        (body.content, filename),
-        "Course file not found",
-    )
-    await db.commit()
-    row = await _fetchone_or_404(
-        db,
-        "SELECT filename, content, updated_at FROM course_files WHERE filename = ?",
-        (filename,),
-        "Course file not found",
-    )
-    return CourseFile.model_validate(dict(row))
+    return await _save_course(db, filename, body.content)
 
 
 @app.delete("/api/courses/{filename:path}", status_code=204)

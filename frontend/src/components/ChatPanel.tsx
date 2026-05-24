@@ -11,10 +11,8 @@ type ContextMenu = { x: number; y: number; convId: string }
 export function ChatPanel() {
   const conversations = useChatStore((s) => s.conversations)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const messages = useChatStore((s) => {
-    const conv = s.conversations.find((c) => c.id === s.activeConversationId)
-    return conv?.messages ?? NO_MESSAGES
-  })
+  const activeConv = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId))
+  const messages = activeConv?.messages ?? NO_MESSAGES
   const newConversation = useChatStore((s) => s.newConversation)
   const selectConversation = useChatStore((s) => s.selectConversation)
   const deleteConversation = useChatStore((s) => s.deleteConversation)
@@ -24,11 +22,6 @@ export function ChatPanel() {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
-  const [hoveredNewBtn, setHoveredNewBtn] = useState(false)
-  const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
-  const [hoveredDeleteItem, setHoveredDeleteItem] = useState(false)
-
-  const activeConv = conversations.find((c) => c.id === activeConversationId)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -37,7 +30,11 @@ export function ChatPanel() {
   useEffect(() => {
     const close = () => setContextMenu(null)
     window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
+    window.addEventListener('contextmenu', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('contextmenu', close)
+    }
   }, [])
 
   const handleSend = () => {
@@ -91,17 +88,7 @@ export function ChatPanel() {
           <button
             onClick={() => newConversation()}
             title="New conversation"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: hoveredNewBtn ? '#ccc' : '#888',
-              cursor: 'pointer',
-              fontSize: 18,
-              lineHeight: 1,
-              padding: '0 2px',
-            }}
-            onMouseEnter={() => setHoveredNewBtn(true)}
-            onMouseLeave={() => setHoveredNewBtn(false)}
+            className="conv-new-btn"
           >
             +
           </button>
@@ -124,22 +111,7 @@ export function ChatPanel() {
                   e.preventDefault()
                   setContextMenu({ x: e.clientX, y: e.clientY, convId: conv.id })
                 }}
-                style={{
-                  padding: '5px 12px',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  color: isActive ? '#ffffff' : '#aaaaaa',
-                  background: isActive ? '#094771' : hoveredConvId === conv.id ? '#2a2d2e' : 'transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                onMouseEnter={() => setHoveredConvId(conv.id)}
-                onMouseLeave={() => setHoveredConvId(null)}
+                className={`conv-item${isActive ? ' active' : ''}`}
               >
                 <span style={{ opacity: isActive ? 1 : 0, fontSize: 10, flexShrink: 0 }}>▶</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.title}</span>
@@ -252,9 +224,7 @@ export function ChatPanel() {
         >
           <div
             onClick={() => { deleteConversation(contextMenu.convId); setContextMenu(null) }}
-            style={{ padding: '8px 14px', fontSize: 13, color: '#f48771', cursor: 'pointer', background: hoveredDeleteItem ? '#3a2020' : 'transparent' }}
-            onMouseEnter={() => setHoveredDeleteItem(true)}
-            onMouseLeave={() => setHoveredDeleteItem(false)}
+            className="conv-menu-delete"
           >
             Supprimer
           </div>

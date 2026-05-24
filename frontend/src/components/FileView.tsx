@@ -9,19 +9,48 @@ type IDiffEditor = Monaco.editor.IDiffEditor
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function btnStyle(bg: string): React.CSSProperties {
-  return {
-    background: bg,
-    border: 'none',
-    borderRadius: 5,
-    color: '#fff',
-    padding: '4px 10px',
-    cursor: 'pointer',
-    fontSize: 12,
-    fontWeight: 600,
-    whiteSpace: 'nowrap',
-    transition: 'opacity 0.1s',
+const BTN_BASE_STYLE: React.CSSProperties = {
+  border: 'none',
+  borderRadius: 5,
+  color: '#fff',
+  padding: '4px 10px',
+  cursor: 'pointer',
+  fontSize: 12,
+  fontWeight: 600,
+  whiteSpace: 'nowrap',
+  transition: 'opacity 0.1s',
+}
+
+// ─── Pure utility ─────────────────────────────────────────────────────────────
+
+function computeMergedContent(
+  decs: HunkDecision[],
+  hunks: ILineChange[],
+  originalContent: string,
+  modifiedContent: string,
+): string {
+  const originalLines = originalContent.split('\n')
+  const modifiedLines = modifiedContent.split('\n')
+
+  const acceptedHunks = decs
+    .filter((d) => d.accepted === true)
+    .map((d) => hunks[d.hunkIndex])
+    .sort((a, b) => b.originalStartLineNumber - a.originalStartLineNumber)
+
+  const result = [...originalLines]
+  for (const hunk of acceptedHunks) {
+    const origStart = hunk.originalStartLineNumber - 1
+    const origEnd = hunk.originalEndLineNumber
+    const modStart = hunk.modifiedStartLineNumber - 1
+    const modEnd = hunk.modifiedEndLineNumber
+    const replacement = modEnd === 0 ? [] : modifiedLines.slice(modStart, modEnd)
+    if (origEnd === 0) {
+      result.splice(origStart + 1, 0, ...replacement)
+    } else {
+      result.splice(origStart, origEnd - origStart, ...replacement)
+    }
   }
+  return result.join('\n')
 }
 
 // ─── Plain editor (no proposal) ──────────────────────────────────────────────
@@ -126,8 +155,9 @@ function DiffReview() {
   const editorRef = useRef<IDiffEditor | null>(null)
   const initializedRef = useRef(false)
   const widgetsRef = useRef<Monaco.editor.IContentWidget[]>([])
+  const btnRefsRef = useRef<Array<{ accept: HTMLButtonElement; reject: HTMLButtonElement }>>([])
   const [hunks, setHunks] = useState<ILineChange[]>([])
-  const [decisions, setDecisions] = useState<HunkDecision[]>([])
+  const [decisions, setDecisions] = useState<HunkDecision[]>([])  
   const [isApplying, setIsApplying] = useState(false)
 
   const activeFile = files.find((f) => f.filename === activeFilename)
@@ -157,16 +187,18 @@ function DiffReview() {
     setTimeout(initHunks, 300)
   }, [])
 
-  // Per-hunk accept/reject widgets
+  // Create per-hunk accept/reject widgets when hunks are initialised
   useEffect(() => {
     if (!monaco || !editorRef.current || hunks.length === 0) return
     const modEditor = editorRef.current.getModifiedEditor()
 
     widgetsRef.current.forEach((w) => modEditor.removeContentWidget(w))
     widgetsRef.current = []
+    btnRefsRef.current = []
+
+    const BASE = 'border-radius:4px;color:#fff;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
 
     hunks.forEach((hunk, i) => {
-      const dec = decisions[i]
       const lineNumber =
         hunk.modifiedEndLineNumber > 0
           ? hunk.modifiedEndLineNumber
@@ -178,34 +210,21 @@ function DiffReview() {
       container.style.cssText =
         'display:flex;gap:6px;padding:2px 8px 4px;justify-content:flex-end;pointer-events:all;'
 
-      const makeBtn = (label: string, active: boolean, activeBg: string, onClick: () => void) => {
-        const btn = document.createElement('button')
-        btn.textContent = label
-        btn.style.cssText = [
-          `background:${active ? activeBg : '#2a2a2a'}`,
-          `border:1px solid ${active ? activeBg : '#555'}`,
-          'border-radius:4px',
-          'color:#fff',
-          'padding:2px 10px',
-          'font-size:11px',
-          'font-weight:600',
-          'cursor:pointer',
-          'font-family:inherit',
-        ].join(';')
-        btn.onclick = onClick
-        return btn
-      }
+      const acceptBtn = document.createElement('button')
+      acceptBtn.textContent = 'Accepter'
+      acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${BASE}`
+      acceptBtn.onclick = () =>
+        setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
 
-      container.appendChild(
-        makeBtn('Accepter', dec?.accepted === true, '#1e7340', () =>
-          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d))),
-        ),
-      )
-      container.appendChild(
-        makeBtn('Refuser', dec?.accepted === false, '#6b3030', () =>
-          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d))),
-        ),
-      )
+      const rejectBtn = document.createElement('button')
+      rejectBtn.textContent = 'Refuser'
+      rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${BASE}`
+      rejectBtn.onclick = () =>
+        setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
+
+      container.appendChild(acceptBtn)
+      container.appendChild(rejectBtn)
+      btnRefsRef.current.push({ accept: acceptBtn, reject: rejectBtn })
 
       const widget: Monaco.editor.IContentWidget = {
         getId: () => `hunk-widget-${i}`,
@@ -225,41 +244,28 @@ function DiffReview() {
         const mod = editorRef.current.getModifiedEditor()
         widgetsRef.current.forEach((w) => mod.removeContentWidget(w))
         widgetsRef.current = []
+        btnRefsRef.current = []
       }
     }
-  }, [monaco, hunks, decisions])
+  }, [monaco, hunks])
 
-  function computeMergedWith(decs: HunkDecision[]): string {
-    if (!activeFile || !proposal) return ''
-    const originalLines = activeFile.content.split('\n')
-    const modifiedLines = proposal.proposed_content.split('\n')
-
-    const acceptedHunks = decs
-      .filter((d) => d.accepted === true)
-      .map((d) => hunks[d.hunkIndex])
-      .sort((a, b) => b.originalStartLineNumber - a.originalStartLineNumber)
-
-    const result = [...originalLines]
-    for (const hunk of acceptedHunks) {
-      const origStart = hunk.originalStartLineNumber - 1
-      const origEnd = hunk.originalEndLineNumber
-      const modStart = hunk.modifiedStartLineNumber - 1
-      const modEnd = hunk.modifiedEndLineNumber
-      const replacement = modEnd === 0 ? [] : modifiedLines.slice(modStart, modEnd)
-      if (origEnd === 0) {
-        result.splice(origStart + 1, 0, ...replacement)
-      } else {
-        result.splice(origStart, origEnd - origStart, ...replacement)
-      }
-    }
-    return result.join('\n')
-  }
+  // Sync button visual states without rebuilding widgets
+  useEffect(() => {
+    decisions.forEach((dec, i) => {
+      const btns = btnRefsRef.current[i]
+      if (!btns) return
+      btns.accept.style.background = dec.accepted === true ? '#1e7340' : '#2a2a2a'
+      btns.accept.style.borderColor = dec.accepted === true ? '#1e7340' : '#555'
+      btns.reject.style.background = dec.accepted === false ? '#6b3030' : '#2a2a2a'
+      btns.reject.style.borderColor = dec.accepted === false ? '#6b3030' : '#555'
+    })
+  }, [decisions])
 
   async function handleApply(decs: HunkDecision[]) {
-    if (!activeFilename) return
+    if (!activeFilename || !activeFile || !proposal) return
     setIsApplying(true)
     try {
-      await applyChanges(activeFilename, computeMergedWith(decs))
+      await applyChanges(activeFilename, computeMergedContent(decs, hunks, activeFile.content, proposal.proposed_content))
     } finally {
       setIsApplying(false)
     }
@@ -292,14 +298,14 @@ function DiffReview() {
       >
         <span style={{ fontSize: 12, color: '#888', flex: 1 }}>{activeFile.filename}</span>
         {anyDecided && (
-          <button onClick={handleApplySelected} disabled={isApplying} style={btnStyle(isApplying ? '#333' : '#0e639c')}>
+          <button onClick={handleApplySelected} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
             {isApplying ? '...' : 'Appliquer la sélection'}
           </button>
         )}
-        <button onClick={handleAcceptAll} disabled={isApplying} style={btnStyle(isApplying ? '#333' : '#1e7340')}>
+        <button onClick={handleAcceptAll} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
           {isApplying ? '...' : 'Tout accepter'}
         </button>
-        <button onClick={handleRejectAll} style={btnStyle('#6b3030')}>
+        <button onClick={handleRejectAll} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
           Tout refuser
         </button>
       </div>

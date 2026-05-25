@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
-import { MarkdownRenderer, calloutTheme } from './MarkdownRenderer'
+import { MarkdownRenderer, calloutTheme, CALLOUT_RE, calloutMod } from './MarkdownRenderer'
 import { useThemeStore } from '../store/themeStore'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
@@ -51,9 +51,10 @@ function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'ori
       while (j < lines.length && lines[j].startsWith('>')) j++
       const blockLines = lines.slice(i, j)
       const firstContent = blockLines[0].replace(/^>\s?/, '')
-      const calloutM = firstContent.match(/^\[!(\w+)\](-?)\s*(.*)/)
+      const calloutM = firstContent.match(CALLOUT_RE)
       if (calloutM) {
         const [, type, mod, rawTitle] = calloutM
+        const { permanent, defaultOpen } = calloutMod(mod)
         const inner: InnerSegment[] = []
         let k = 1
         while (k < blockLines.length) {
@@ -63,7 +64,7 @@ function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'ori
           inner.push({ text: blockLines.slice(k, m).map(l => l.replace(/^>\s?/, '')).join('\n'), hunkIndex: hunkIdx })
           k = m
         }
-        result.push({ kind: 'callout', title: rawTitle || type, calloutType: type.toLowerCase(), permanent: mod === '', defaultOpen: mod !== '-', inner })
+        result.push({ kind: 'callout', title: rawTitle || type, calloutType: type.toLowerCase(), permanent, defaultOpen, inner })
       } else {
         let blockHunk: number | null = null
         for (let l = i; l < j; l++) { const h = lineHunk.get(l + 1); if (h !== undefined) { blockHunk = h; break } }
@@ -465,16 +466,10 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
     }
   }
 
-  function syncScrollFromLeft() {
-    if (syncingScroll.current) return
+  function syncScroll(from: HTMLDivElement | null, to: HTMLDivElement | null) {
+    if (syncingScroll.current || !from || !to) return
     syncingScroll.current = true
-    if (rightScrollRef.current && leftScrollRef.current) rightScrollRef.current.scrollTop = leftScrollRef.current.scrollTop
-    syncingScroll.current = false
-  }
-  function syncScrollFromRight() {
-    if (syncingScroll.current) return
-    syncingScroll.current = true
-    if (leftScrollRef.current && rightScrollRef.current) leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop
+    to.scrollTop = from.scrollTop
     syncingScroll.current = false
   }
 
@@ -556,7 +551,7 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
         {isPreview && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 101, display: 'flex', overflow: 'hidden', background: 'var(--bg-1)' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={leftScrollRef} onScroll={syncScrollFromLeft} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+              <div ref={leftScrollRef} onScroll={() => syncScroll(leftScrollRef.current, rightScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
                 <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
                   {buildAnnotatedContent(activeFile.content, hunks, 'original').map((seg, i) => {
                     if (seg.kind === 'callout') {
@@ -575,7 +570,7 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
             </div>
             <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={rightScrollRef} onScroll={syncScrollFromRight} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+              <div ref={rightScrollRef} onScroll={() => syncScroll(rightScrollRef.current, leftScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
                 <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
                   {buildAnnotatedContent(proposal.proposed_content, hunks, 'modified').map((seg, i) => {
                     if (seg.kind === 'callout') {
@@ -611,11 +606,11 @@ export function FileView() {
   const proposals = useCourseStore((s) => s.proposals)
   const files = useCourseStore((s) => s.files)
   const [isPreview, setIsPreview] = useState(false)
-
-  useEffect(() => { setIsPreview(false) }, [activeFilename])
-
   const hasProposal = activeFilename ? !!proposals[activeFilename] : false
   const hasFile = files.some((f) => f.filename === activeFilename)
+
+  useEffect(() => { setIsPreview(false) }, [activeFilename])
+  useEffect(() => { if (hasProposal) setIsPreview(false) }, [hasProposal])
 
   if (!activeFilename || !hasFile) {
     return (

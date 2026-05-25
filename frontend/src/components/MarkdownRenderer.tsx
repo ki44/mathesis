@@ -16,23 +16,17 @@ export function calloutTheme(type?: string): { border: string; bg: string; title
 function CalloutBlock({ title, defaultOpen, permanent, calloutType, children }: { title: string; defaultOpen: boolean; permanent?: boolean; calloutType?: string; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen)
   const theme = calloutTheme(calloutType)
-  if (permanent) {
-    return (
-      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
-        <div style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600 }}>{title}</div>
-        <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>{children}</div>
-      </div>
-    )
-  }
+  const isOpen = permanent || open
   return (
     <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
-      <div onClick={() => setOpen(o => !o)}
-        style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
+      <div
+        onClick={permanent ? undefined : () => setOpen(o => !o)}
+        style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: permanent ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
       >
-        <span style={{ fontSize: 11, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+        {!permanent && <span style={{ fontSize: 11, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>}
         {title}
       </div>
-      {open && <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>{children}</div>}
+      {isOpen && <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>{children}</div>}
     </div>
   )
 }
@@ -46,6 +40,11 @@ function extractNodeText(nodes: any[]): string {
   }).join('')
 }
 
+export const CALLOUT_RE = /^\[!(\w+)\](-?)\s*(.*)/
+export function calloutMod(mod: string) {
+  return { permanent: mod === '', defaultOpen: mod !== '-' }
+}
+
 function remarkCallout() {
   return (tree: any) => {
     function walk(nodes: any[]) {
@@ -54,14 +53,14 @@ function remarkCallout() {
           const first = node.children?.[0]
           if (first?.type === 'paragraph') {
             const text = extractNodeText(first.children).trim()
-            const m = text.match(/^\[!(\w+)\](-?)\s*(.*)/)
+            const m = text.match(CALLOUT_RE)
             if (m) {
               const [, type, mod, title] = m
-              // no modifier → permanent (non-collapsible); '-' → collapsible, starts closed
+              const { permanent, defaultOpen } = calloutMod(mod)
               node.data = { hName: 'div', hProperties: {
                 'data-callout': 'true',
-                'data-callout-open': String(mod !== '-'),
-                'data-callout-permanent': String(mod === ''),
+                'data-callout-open': String(defaultOpen),
+                'data-callout-permanent': String(permanent),
                 'data-callout-title': title || type,
                 'data-callout-type': type.toLowerCase(),
               }}
@@ -115,7 +114,7 @@ const components: React.ComponentProps<typeof ReactMarkdown>['components'] = {
     <em style={{ color: 'var(--text-em)' }}>{children}</em>
   ),
   code: ({ children, className }) => {
-    const isBlock = !!className
+    const isBlock = !!className || String(children).includes('\n')
     if (isBlock) return <code style={{ display: 'block', fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace", fontSize: '0.9em' }}>{children}</code>
     return <code style={{ background: 'var(--bg-code-inline)', padding: '0.2em 0.4em', borderRadius: 3, fontFamily: "'Fira Code', Consolas, monospace", fontSize: '0.88em', color: 'var(--text-code-inline)' }}>{children}</code>
   },

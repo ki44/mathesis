@@ -58,7 +58,7 @@ export function useChat() {
               }
               appendDelta(convId, asstId, payload.text ?? '')
             } else if (event === 'tool_call') {
-              addMessage(convId, { role: 'tool_call', content: `⚙ ${payload.name}` })
+              addMessage(convId, { role: 'tool_call', content: `${payload.name}` })
               needNewAsst = true
             } else if (event === 'done') {
               await Promise.all([fetchProposals(), fetchFiles()])

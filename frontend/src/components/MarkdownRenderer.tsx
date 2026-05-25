@@ -1,15 +1,11 @@
-import { useState, useContext, createContext } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 
-const ForceOpenCtx = createContext(false)
-type DiffType = 'added' | 'removed' | null
-const DiffCtx = createContext<DiffType>(null)
-
-function calloutTheme(type?: string): { border: string; bg: string; title: string } {
+export function calloutTheme(type?: string): { border: string; bg: string; title: string } {
   switch (type?.toLowerCase()) {
     case 'definition': return { border: 'rgba(37,99,235,0.4)', bg: 'rgba(37,99,235,0.06)', title: '#93c5fd' }
     case 'theorem': case 'proposition': return { border: 'rgba(217,119,6,0.4)', bg: 'rgba(217,119,6,0.06)', title: '#fbbf24' }
@@ -18,21 +14,18 @@ function calloutTheme(type?: string): { border: string; bg: string; title: strin
 }
 
 function CalloutBlock({ title, defaultOpen, permanent, calloutType, children }: { title: string; defaultOpen: boolean; permanent?: boolean; calloutType?: string; children: ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen || useContext(ForceOpenCtx))
-  const diffType = useContext(DiffCtx)
+  const [open, setOpen] = useState(defaultOpen)
   const theme = calloutTheme(calloutType)
-  const borderColor = diffType === 'added' ? 'rgba(34,197,94,0.6)' : diffType === 'removed' ? 'rgba(200,60,60,0.6)' : theme.border
-  const bgColor = diffType === 'added' ? 'rgba(34,197,94,0.06)' : diffType === 'removed' ? 'rgba(220,38,38,0.06)' : theme.bg
   if (permanent) {
     return (
-      <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: bgColor }}>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
         <div style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600 }}>{title}</div>
         <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>{children}</div>
       </div>
     )
   }
   return (
-    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: bgColor }}>
+    <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
       <div onClick={() => setOpen(o => !o)}
         style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
       >
@@ -83,19 +76,17 @@ function remarkCallout() {
   }
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  root: {
-    color: 'var(--text-1)',
-    lineHeight: 1.7,
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    fontSize: 14,
-    overflowY: 'auto',
-    padding: '24px 32px',
-    maxWidth: 800,
-    margin: '0 auto',
-    width: '100%',
-    boxSizing: 'border-box',
-  },
+const ROOT_STYLE: React.CSSProperties = {
+  color: 'var(--text-1)',
+  lineHeight: 1.7,
+  fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fontSize: 14,
+  overflowY: 'auto',
+  padding: '24px 32px',
+  maxWidth: 800,
+  margin: '0 auto',
+  width: '100%',
+  boxSizing: 'border-box',
 }
 
 const components: React.ComponentProps<typeof ReactMarkdown>['components'] = {
@@ -172,22 +163,18 @@ const components: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   },
 }
 
-export function MarkdownRenderer({ content, compact, forceOpenCallouts, diffType }: { content: string; compact?: boolean; forceOpenCallouts?: boolean; diffType?: DiffType }) {
+export function MarkdownRenderer({ content, compact }: { content: string; compact?: boolean }) {
   const rootStyle: React.CSSProperties = compact
-    ? { ...styles.root, padding: 0, maxWidth: 'none', margin: 0 }
-    : styles.root
+    ? { ...ROOT_STYLE, padding: 0, maxWidth: 'none', margin: 0 }
+    : ROOT_STYLE
 
   return (
-    <ForceOpenCtx.Provider value={!!forceOpenCallouts}>
-      <DiffCtx.Provider value={diffType ?? null}>
-        <div style={rootStyle}>
-          <ReactMarkdown
-            remarkPlugins={[remarkMath, remarkCallout]}
-            rehypePlugins={[rehypeKatex]}
-            components={components}
-          >{content}</ReactMarkdown>
-        </div>
-      </DiffCtx.Provider>
-    </ForceOpenCtx.Provider>
+    <div style={rootStyle}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath, remarkCallout]}
+        rehypePlugins={[rehypeKatex]}
+        components={components}
+      >{content}</ReactMarkdown>
+    </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
-import { MarkdownRenderer } from './MarkdownRenderer'
+import { MarkdownRenderer, calloutTheme } from './MarkdownRenderer'
 import { useThemeStore } from '../store/themeStore'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
@@ -81,12 +81,11 @@ function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'ori
   return result
 }
 
-function inlineCalloutTheme(type?: string): { border: string; bg: string; title: string } {
-  switch (type?.toLowerCase()) {
-    case 'definition': return { border: 'rgba(37,99,235,0.4)', bg: 'rgba(37,99,235,0.06)', title: '#93c5fd' }
-    case 'theorem': case 'proposition': return { border: 'rgba(217,119,6,0.4)', bg: 'rgba(217,119,6,0.06)', title: '#fbbf24' }
-    default: return { border: 'var(--border)', bg: 'transparent', title: '#7f6df2' }
+function hunkDecisionStyle(type: 'accept' | 'reject', accepted: boolean | null): React.CSSProperties {
+  if (type === 'accept') {
+    return { ...BTN_BASE_STYLE, background: accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)', border: `1px solid ${accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'}`, color: accepted === true ? '#fff' : '#4ade80', padding: '2px 10px', fontSize: 11 }
   }
+  return { ...BTN_BASE_STYLE, background: accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)', border: `1px solid ${accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'}`, color: accepted === false ? '#fff' : '#f87171', padding: '2px 10px', fontSize: 11 }
 }
 
 function InlineCalloutContainer({ title, calloutType, permanent, inner, side, open, onToggle, decisions, setDecisions }: {
@@ -100,7 +99,7 @@ function InlineCalloutContainer({ title, calloutType, permanent, inner, side, op
   decisions: HunkDecision[]
   setDecisions: React.Dispatch<React.SetStateAction<HunkDecision[]>>
 }) {
-  const theme = inlineCalloutTheme(calloutType)
+  const theme = calloutTheme(calloutType)
   const isOpen = permanent || open
   return (
     <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
@@ -124,8 +123,8 @@ function InlineCalloutContainer({ title, calloutType, permanent, inner, side, op
             return (
               <div key={idx} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -8, paddingRight: 140 }}>
                 <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
-                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: true } : d))} style={{ ...BTN_BASE_STYLE, background: dec?.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)', border: `1px solid ${dec?.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'}`, color: dec?.accepted === true ? '#fff' : '#4ade80', padding: '2px 10px', fontSize: 11 }}>Accept</button>
-                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: false } : d))} style={{ ...BTN_BASE_STYLE, background: dec?.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)', border: `1px solid ${dec?.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'}`, color: dec?.accepted === false ? '#fff' : '#f87171', padding: '2px 10px', fontSize: 11 }}>Reject</button>
+                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
+                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
                 </div>
                 <MarkdownRenderer content={seg.text} compact />
               </div>
@@ -466,6 +465,19 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
     }
   }
 
+  function syncScrollFromLeft() {
+    if (syncingScroll.current) return
+    syncingScroll.current = true
+    if (rightScrollRef.current && leftScrollRef.current) rightScrollRef.current.scrollTop = leftScrollRef.current.scrollTop
+    syncingScroll.current = false
+  }
+  function syncScrollFromRight() {
+    if (syncingScroll.current) return
+    syncingScroll.current = true
+    if (leftScrollRef.current && rightScrollRef.current) leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop
+    syncingScroll.current = false
+  }
+
   if (!activeFile || !proposal) return null
 
   const allDecided = decisions.length > 0 && decisions.every((d) => d.accepted !== null)
@@ -518,8 +530,6 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
         </div>
       )}
 
-
-
       {/* Content area — Monaco always mounted; preview panels overlay it when active */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {/* Monaco DiffEditor */}
@@ -546,7 +556,7 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
         {isPreview && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 101, display: 'flex', overflow: 'hidden', background: 'var(--bg-1)' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={leftScrollRef} onScroll={() => { if (syncingScroll.current) return; syncingScroll.current = true; if (rightScrollRef.current && leftScrollRef.current) rightScrollRef.current.scrollTop = leftScrollRef.current.scrollTop; syncingScroll.current = false }} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+              <div ref={leftScrollRef} onScroll={syncScrollFromLeft} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
                 <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
                   {buildAnnotatedContent(activeFile.content, hunks, 'original').map((seg, i) => {
                     if (seg.kind === 'callout') {
@@ -565,7 +575,7 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
             </div>
             <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={rightScrollRef} onScroll={() => { if (syncingScroll.current) return; syncingScroll.current = true; if (leftScrollRef.current && rightScrollRef.current) leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop; syncingScroll.current = false }} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+              <div ref={rightScrollRef} onScroll={syncScrollFromRight} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
                 <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
                   {buildAnnotatedContent(proposal.proposed_content, hunks, 'modified').map((seg, i) => {
                     if (seg.kind === 'callout') {
@@ -575,8 +585,8 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
                     if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
                     const hunkIdx = seg.hunkIndex
                     const dec = decisions[hunkIdx]
-                    const acceptBtn = <button key="a" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: true } : d))} style={{ ...BTN_BASE_STYLE, background: dec?.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)', border: `1px solid ${dec?.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'}`, color: dec?.accepted === true ? '#fff' : '#4ade80', padding: '2px 10px', fontSize: 11 }}>Accept</button>
-                    const rejectBtn = <button key="r" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: false } : d))} style={{ ...BTN_BASE_STYLE, background: dec?.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)', border: `1px solid ${dec?.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'}`, color: dec?.accepted === false ? '#fff' : '#f87171', padding: '2px 10px', fontSize: 11 }}>Reject</button>
+                    const acceptBtn = <button key="a" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
+                    const rejectBtn = <button key="r" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
                     return (
                       <div key={i} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -11, paddingRight: 140 }}>
                         <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', alignItems: 'center', gap: 4 }}>{acceptBtn}{rejectBtn}</div>
@@ -624,7 +634,5 @@ export function FileView() {
     )
   }
 
-  return hasProposal
-    ? <DiffReview isPreview={isPreview} setIsPreview={setIsPreview} />
-    : <PlainEditor isPreview={isPreview} setIsPreview={setIsPreview} />
+  return hasProposal ? <DiffReview isPreview={isPreview} setIsPreview={setIsPreview} /> : <PlainEditor isPreview={isPreview} setIsPreview={setIsPreview} />
 }

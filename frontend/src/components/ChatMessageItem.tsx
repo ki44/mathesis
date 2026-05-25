@@ -8,7 +8,6 @@ interface Props {
 export function ChatMessageItem({ message }: Props) {
   const isUser = message.role === 'user'
   const isToolCall = message.role === 'tool_call'
-  const isAssistant = message.role === 'assistant'
 
   if (isUser) {
     return (

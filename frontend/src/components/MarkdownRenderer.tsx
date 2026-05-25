@@ -1,16 +1,40 @@
-import { useState } from 'react'
+import { useState, useContext, createContext } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 
-function CalloutBlock({ title, defaultOpen, children }: { title: string; defaultOpen: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen)
+const ForceOpenCtx = createContext(false)
+type DiffType = 'added' | 'removed' | null
+const DiffCtx = createContext<DiffType>(null)
+
+function calloutTheme(type?: string): { border: string; bg: string; title: string } {
+  switch (type?.toLowerCase()) {
+    case 'definition': return { border: 'rgba(37,99,235,0.4)', bg: 'rgba(37,99,235,0.06)', title: '#93c5fd' }
+    case 'theorem': case 'proposition': return { border: 'rgba(217,119,6,0.4)', bg: 'rgba(217,119,6,0.06)', title: '#fbbf24' }
+    default: return { border: 'var(--border)', bg: 'transparent', title: '#7f6df2' }
+  }
+}
+
+function CalloutBlock({ title, defaultOpen, permanent, calloutType, children }: { title: string; defaultOpen: boolean; permanent?: boolean; calloutType?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen || useContext(ForceOpenCtx))
+  const diffType = useContext(DiffCtx)
+  const theme = calloutTheme(calloutType)
+  const borderColor = diffType === 'added' ? 'rgba(34,197,94,0.6)' : diffType === 'removed' ? 'rgba(200,60,60,0.6)' : theme.border
+  const bgColor = diffType === 'added' ? 'rgba(34,197,94,0.06)' : diffType === 'removed' ? 'rgba(220,38,38,0.06)' : theme.bg
+  if (permanent) {
+    return (
+      <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: bgColor }}>
+        <div style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600 }}>{title}</div>
+        <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>{children}</div>
+      </div>
+    )
+  }
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 6, margin: '1em 0', overflow: 'hidden' }}>
+    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: bgColor }}>
       <div onClick={() => setOpen(o => !o)}
-        style={{ padding: '8px 14px', background: 'var(--bg-2)', color: '#7f6df2', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
+        style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
       >
         <span style={{ fontSize: 11, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
         {title}
@@ -37,13 +61,16 @@ function remarkCallout() {
           const first = node.children?.[0]
           if (first?.type === 'paragraph') {
             const text = extractNodeText(first.children).trim()
-            const m = text.match(/^\[!(\w+)\]([+-]?)\s*(.*)/)
+            const m = text.match(/^\[!(\w+)\](-?)\s*(.*)/)
             if (m) {
               const [, type, mod, title] = m
+              // no modifier → permanent (non-collapsible); '-' → collapsible, starts closed
               node.data = { hName: 'div', hProperties: {
                 'data-callout': 'true',
                 'data-callout-open': String(mod !== '-'),
+                'data-callout-permanent': String(mod === ''),
                 'data-callout-title': title || type,
+                'data-callout-type': type.toLowerCase(),
               }}
               node.children = node.children.slice(1)
             }
@@ -131,7 +158,12 @@ const components: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   div: ({ children, ...props }: any) => {
     if (props['data-callout'] === 'true') {
       return (
-        <CalloutBlock title={props['data-callout-title'] as string} defaultOpen={props['data-callout-open'] === 'true'}>
+        <CalloutBlock
+          title={props['data-callout-title'] as string}
+          defaultOpen={props['data-callout-open'] === 'true'}
+          permanent={props['data-callout-permanent'] === 'true'}
+          calloutType={props['data-callout-type'] as string}
+        >
           {children}
         </CalloutBlock>
       )
@@ -140,18 +172,22 @@ const components: React.ComponentProps<typeof ReactMarkdown>['components'] = {
   },
 }
 
-export function MarkdownRenderer({ content, compact }: { content: string; compact?: boolean }) {
+export function MarkdownRenderer({ content, compact, forceOpenCallouts, diffType }: { content: string; compact?: boolean; forceOpenCallouts?: boolean; diffType?: DiffType }) {
   const rootStyle: React.CSSProperties = compact
     ? { ...styles.root, padding: 0, maxWidth: 'none', margin: 0 }
     : styles.root
 
   return (
-    <div style={rootStyle}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkCallout]}
-        rehypePlugins={[rehypeKatex]}
-        components={components}
-      >{content}</ReactMarkdown>
-    </div>
+    <ForceOpenCtx.Provider value={!!forceOpenCallouts}>
+      <DiffCtx.Provider value={diffType ?? null}>
+        <div style={rootStyle}>
+          <ReactMarkdown
+            remarkPlugins={[remarkMath, remarkCallout]}
+            rehypePlugins={[rehypeKatex]}
+            components={components}
+          >{content}</ReactMarkdown>
+        </div>
+      </DiffCtx.Provider>
+    </ForceOpenCtx.Provider>
   )
 }

@@ -49,11 +49,43 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .sidebar-menu-delete:hover { background: #3a1e1e; }
 
 /* Chat conversation list */
-.conv-item { padding: 5px 12px; cursor: pointer; font-size: 12px; color: var(--text-2); background: transparent; display: flex; align-items: center; gap: 6px; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-item { padding: 5px 12px; cursor: pointer; font-size: 12px; color: var(--text-2); background: transparent; display: flex; align-items: center; gap: 6px; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 0.1s; }
 .conv-item:hover { background: var(--bg-3); }
 .conv-item.active { color: #ffffff; background: #094771; }
 .conv-item.active:hover { background: #094771; }
-.conv-new-btn { background: none; border: none; color: var(--text-2); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; }
+.conv-item.ctx-target { background: rgba(255, 160, 30, 0.12); color: var(--text-1); }
+.conv-item.ctx-target:hover { background: rgba(255, 160, 30, 0.18); }
+.conv-new-btn { background: none; border: none; color: var(--text-2); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; transition: color 0.1s; }
 .conv-new-btn:hover { color: var(--text-1); }
 .conv-menu-delete { padding: 8px 14px; font-size: 13px; color: #f48771; cursor: pointer; background: transparent; }
 .conv-menu-delete:hover { background: #3a2020; }
+
+/* File tree nodes */
+.tree-node { transition: background 0.1s; }
+.tree-node:hover { background: rgba(255,255,255,0.06); }
+.tree-node.is-active { background: #094771; color: #fff; }
+.tree-node.is-active:hover { background: #0a5490; }
+.tree-node.is-ctx-target { background: rgba(255, 160, 30, 0.12); }
+.tree-node.is-ctx-target:hover { background: rgba(255, 160, 30, 0.18); }
+.tree-node.is-focused { background: rgba(255,255,255,0.05); }
+.tree-node.is-dragover { background: rgba(14, 99, 156, 0.22); }
+
+/* Context menu buttons */
+.ctx-menu-item { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 5px 14px; font-size: 13px; transition: background 0.1s; }
+.ctx-menu-item:hover { background: rgba(255,255,255,0.08); }
+
+/* Icon buttons */
+.icon-btn { background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; color: var(--text-2); border-radius: 4px; transition: background 0.1s, color 0.1s; }
+.icon-btn:hover { background: var(--bg-3); color: var(--text-1); }
+
+/* Chat message hover + highlight */
+.msg-wrapper { border-radius: 4px; transition: background 0.1s; }
+.msg-wrapper:hover { background: rgba(255,255,255,0.025); }
+.msg-wrapper.highlighted { background: rgba(255, 160, 30, 0.08); }
+
+/* Light theme overrides */
+[data-theme="light"] .tree-node:hover { background: rgba(0,0,0,0.05); }
+[data-theme="light"] .tree-node.is-focused { background: rgba(0,0,0,0.04); }
+[data-theme="light"] .tree-node.is-dragover { background: rgba(14, 99, 156, 0.12); }
+[data-theme="light"] .ctx-menu-item:hover { background: rgba(0,0,0,0.06); }
+[data-theme="light"] .msg-wrapper:hover { background: rgba(0,0,0,0.03); }

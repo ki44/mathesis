@@ -3,6 +3,7 @@ import { useCourse } from './hooks/useCourse'
 import { ChatPanel } from './components/ChatPanel'
 import { FileView } from './components/FileView'
 import { Sidebar } from './components/Sidebar'
+import { TabBar } from './components/TabBar'
 
 // ─── Resize handle ───────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ export function App() {
       </div>
       <ResizeHandle onMouseDown={onSidebarDrag} />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <TabBar />
         <FileView />
       </div>
       <ResizeHandle onMouseDown={onChatDrag} />

@@ -8,13 +8,13 @@ export function useChat() {
   const addMessage = useChatStore((s) => s.addMessage)
   const appendDelta = useChatStore((s) => s.appendDelta)
   const setIsStreaming = useChatStore((s) => s.setIsStreaming)
+  const startRerun = useChatStore((s) => s.startRerun)
+  const finalizeRerun = useChatStore((s) => s.finalizeRerun)
   const fetchProposals = useCourseStore((s) => s.fetchProposals)
   const fetchFiles = useCourseStore((s) => s.fetchFiles)
 
-  const sendMessage = useCallback(
-    async (text: string) => {
-      const convId = activeConversationId ?? newConversation()
-      addMessage(convId, { role: 'user', content: text })
+  const _stream = useCallback(
+    async (text: string, convId: string, rerun: boolean) => {
       let asstId = addMessage(convId, { role: 'assistant', content: '' })
       let needNewAsst = false
       setIsStreaming(true)
@@ -23,7 +23,7 @@ export function useChat() {
         const res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, conversation_id: convId }),
+          body: JSON.stringify({ message: text, conversation_id: convId, rerun }),
         })
 
         const reader = res.body!.getReader()
@@ -35,7 +35,6 @@ export function useChat() {
           if (done) break
           buffer += decoder.decode(value, { stream: true })
 
-          // SSE messages are separated by double newlines
           const parts = buffer.split('\n\n')
           buffer = parts.pop() ?? ''
 
@@ -73,9 +72,27 @@ export function useChat() {
         setIsStreaming(false)
       }
     },
-    [activeConversationId, newConversation, addMessage, appendDelta, setIsStreaming, fetchProposals, fetchFiles],
+    [addMessage, appendDelta, setIsStreaming, fetchProposals, fetchFiles],
   )
 
-  return { sendMessage }
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const convId = activeConversationId ?? newConversation()
+      addMessage(convId, { role: 'user', content: text })
+      await _stream(text, convId, false)
+    },
+    [activeConversationId, newConversation, addMessage, _stream],
+  )
+
+  const rerunLastMessage = useCallback(async () => {
+    const convId = activeConversationId
+    if (!convId) return
+    const lastUserText = startRerun(convId)
+    if (!lastUserText) return
+    await _stream(lastUserText, convId, true)
+    finalizeRerun(convId)
+  }, [activeConversationId, startRerun, finalizeRerun, _stream])
+
+  return { sendMessage, rerunLastMessage }
 }
 

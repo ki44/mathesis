@@ -4,6 +4,11 @@ export interface CourseFile {
   updated_at: string
 }
 
+export interface FolderEntry {
+  path: string
+  created_at: string
+}
+
 export interface Proposal {
   filename: string
   proposed_content: string
@@ -20,4 +25,10 @@ export interface ChatMessage {
 export interface HunkDecision {
   hunkIndex: number
   accepted: boolean | null
+}
+
+export interface ClipboardItem {
+  type: 'copy' | 'cut'
+  kind: 'file' | 'folder'
+  path: string
 }

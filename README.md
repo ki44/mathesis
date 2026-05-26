@@ -86,7 +86,8 @@ Start both servers in separate terminals.
 **Backend** (from the repo root, with the virtual environment active):
 
 ```bash
-uvicorn src.main:app --reload
+cd src/
+uvicorn main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`.

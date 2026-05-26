@@ -178,12 +178,17 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
   const [isDirty, setIsDirty] = useState(false)
   const currentValueRef = useRef<string>('')
   const savedContentRef = useRef<string>('')
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const revision = fileRevisions[activeFilename ?? ''] ?? 0
 
   useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = null
+    }
     setIsDirty(false)
     const content = activeFile?.content ?? ''
     currentValueRef.current = content
@@ -216,6 +221,7 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
       () => { void saveRef.current() },
     )
+    editor.onDidBlurEditorText(() => { void saveRef.current() })
     editor.onKeyDown((e) => {
       const sel = editor.getSelection()
       const model = editor.getModel()
@@ -277,7 +283,7 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
         <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>
           {activeFile.filename}
           {isDirty && (
-            <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
+            <span title="Unsaved changes — autosaves on blur or after 1 s" style={{ color: '#f9c74f', marginLeft: 6 }}>
               ●
             </span>
           )}
@@ -292,7 +298,7 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {/* Preview overlay — sits on top of Monaco so the editor stays mounted and undo history is preserved */}
         {isPreview && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+          <div onDoubleClick={() => setIsPreview(false)} style={{ position: 'absolute', inset: 0, zIndex: 1, overflowY: 'auto', background: 'var(--bg-1)', cursor: 'text' }}>
             <MarkdownRenderer content={isDirty ? currentValueRef.current : activeFile.content} />
           </div>
         )}
@@ -309,6 +315,8 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
               if (value !== undefined) {
                 currentValueRef.current = value
                 setIsDirty(value !== savedContentRef.current)
+                if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+                debounceTimerRef.current = setTimeout(() => { void saveRef.current() }, 1000)
               }
             }}
             options={{

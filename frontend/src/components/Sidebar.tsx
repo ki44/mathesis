@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useCourseStore } from '../store/courseStore'
 import { useContextMenuClose } from '../hooks/useContextMenuClose'
+import { useThemeStore } from '../store/themeStore'
 
 export function Sidebar() {
   const files = useCourseStore((s) => s.files)
@@ -12,6 +13,7 @@ export function Sidebar() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filename: string } | null>(null)
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
   useContextMenuClose(closeContextMenu)
+  const { theme, toggle } = useThemeStore()
 
   const handleDelete = async (filename: string) => {
     setContextMenu(null)
@@ -23,7 +25,7 @@ export function Sidebar() {
     <div
       style={{
         width: '100%',
-        background: '#252526',
+        background: 'var(--bg-2)',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
@@ -34,21 +36,31 @@ export function Sidebar() {
       <div
         style={{
           padding: '10px 14px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           fontWeight: 600,
           fontSize: 12,
-          color: '#888',
+          color: 'var(--text-2)',
           textTransform: 'uppercase',
           letterSpacing: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
         }}
       >
         Courses
+        <button
+          onClick={toggle}
+          title="Toggle light/dark mode"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0, color: 'var(--text-2)' }}
+        >
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
       </div>
 
       {/* File list */}
       <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4 }}>
         {files.length === 0 && (
-          <p style={{ color: '#555', fontSize: 12, padding: '12px 14px' }}>
+          <p style={{ color: 'var(--text-3)', fontSize: 12, padding: '12px 14px' }}>
             No courses yet
           </p>
         )}
@@ -101,13 +113,13 @@ export function Sidebar() {
             position: 'fixed',
             top: contextMenu.y,
             left: contextMenu.x,
-            background: '#2d2d2d',
-            border: '1px solid #444',
+            background: 'var(--bg-3)',
+            border: '1px solid var(--border-2)',
             borderRadius: 4,
             padding: '4px 0',
             zIndex: 1000,
             minWidth: 160,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
           }}
         >
           <div

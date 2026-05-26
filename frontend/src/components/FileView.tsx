@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
+import { MarkdownRenderer, calloutTheme, CALLOUT_RE, calloutMod } from './MarkdownRenderer'
+import { useThemeStore } from '../store/themeStore'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
 import type { HunkDecision } from '../types'
@@ -21,9 +23,119 @@ const BTN_BASE_STYLE: React.CSSProperties = {
   transition: 'opacity 0.1s',
 }
 
-const WIDGET_BTN_BASE = 'border-radius:4px;color:#fff;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
+const WIDGET_BTN_BASE = 'border-radius:4px;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
 
 // ─── Pure utility ─────────────────────────────────────────────────────────────
+
+type InnerSegment = { text: string; hunkIndex: number | null }
+type FlatSegment = { kind: 'flat'; text: string; hunkIndex: number | null }
+type CalloutSegment = { kind: 'callout'; title: string; calloutType: string; permanent: boolean; defaultOpen: boolean; inner: InnerSegment[] }
+type ContentSegment = FlatSegment | CalloutSegment
+
+/** Split content into annotated segments. Callout blocks (> [!TYPE]) become CalloutSegment with
+ *  per-body-paragraph hunk assignment; all other content becomes FlatSegment. */
+function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'original' | 'modified'): ContentSegment[] {
+  const lines = content.split('\n')
+  const lineHunk = new Map<number, number>()
+  hunks.forEach((hunk, idx) => {
+    const start = side === 'original' ? hunk.originalStartLineNumber : hunk.modifiedStartLineNumber
+    const end   = side === 'original' ? hunk.originalEndLineNumber   : hunk.modifiedEndLineNumber
+    if (end > 0) for (let l = start; l <= end; l++) lineHunk.set(l, idx)
+  })
+
+  const result: ContentSegment[] = []
+  let i = 0
+  while (i < lines.length) {
+    if (lines[i].startsWith('>')) {
+      let j = i
+      while (j < lines.length && lines[j].startsWith('>')) j++
+      const blockLines = lines.slice(i, j)
+      const firstContent = blockLines[0].replace(/^>\s?/, '')
+      const calloutM = firstContent.match(CALLOUT_RE)
+      if (calloutM) {
+        const [, type, mod, rawTitle] = calloutM
+        const { permanent, defaultOpen } = calloutMod(mod)
+        const inner: InnerSegment[] = []
+        let k = 1
+        while (k < blockLines.length) {
+          const hunkIdx = lineHunk.get(i + k + 1) ?? null
+          let m = k
+          while (m < blockLines.length && (lineHunk.get(i + m + 1) ?? null) === hunkIdx) m++
+          inner.push({ text: blockLines.slice(k, m).map(l => l.replace(/^>\s?/, '')).join('\n'), hunkIndex: hunkIdx })
+          k = m
+        }
+        result.push({ kind: 'callout', title: rawTitle || type, calloutType: type.toLowerCase(), permanent, defaultOpen, inner })
+      } else {
+        let blockHunk: number | null = null
+        for (let l = i; l < j; l++) { const h = lineHunk.get(l + 1); if (h !== undefined) { blockHunk = h; break } }
+        result.push({ kind: 'flat', text: blockLines.join('\n'), hunkIndex: blockHunk })
+      }
+      i = j
+    } else {
+      const hunkIdx = lineHunk.get(i + 1) ?? null
+      let j = i
+      while (j < lines.length && !lines[j].startsWith('>') && (lineHunk.get(j + 1) ?? null) === hunkIdx) j++
+      result.push({ kind: 'flat', text: lines.slice(i, j).join('\n'), hunkIndex: hunkIdx })
+      i = j
+    }
+  }
+  return result
+}
+
+function hunkDecisionStyle(type: 'accept' | 'reject', accepted: boolean | null): React.CSSProperties {
+  if (type === 'accept') {
+    return { ...BTN_BASE_STYLE, background: accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)', border: `1px solid ${accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'}`, color: accepted === true ? '#fff' : '#4ade80', padding: '2px 10px', fontSize: 11 }
+  }
+  return { ...BTN_BASE_STYLE, background: accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)', border: `1px solid ${accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'}`, color: accepted === false ? '#fff' : '#f87171', padding: '2px 10px', fontSize: 11 }
+}
+
+function InlineCalloutContainer({ title, calloutType, permanent, inner, side, open, onToggle, decisions, setDecisions }: {
+  title: string
+  calloutType?: string
+  permanent: boolean
+  inner: InnerSegment[]
+  side: 'original' | 'modified'
+  open: boolean
+  onToggle: () => void
+  decisions: HunkDecision[]
+  setDecisions: React.Dispatch<React.SetStateAction<HunkDecision[]>>
+}) {
+  const theme = calloutTheme(calloutType)
+  const isOpen = permanent || open
+  return (
+    <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
+      <div onClick={permanent ? undefined : onToggle} style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: permanent ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}>
+        {!permanent && <span style={{ fontSize: 11, display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>}
+        {title}
+      </div>
+      {isOpen && (
+        <div style={{ padding: '4px 16px 8px', borderTop: '1px solid var(--border)' }}>
+          {inner.map((seg, idx) => {
+            if (seg.hunkIndex === null) return <div key={idx}><MarkdownRenderer content={seg.text} compact /></div>
+            if (side === 'original') {
+              return (
+                <div key={idx} style={{ background: 'rgba(220,38,38,0.10)', borderLeft: '3px solid rgba(200,60,60,0.55)', paddingLeft: 8, marginLeft: -8 }}>
+                  <MarkdownRenderer content={seg.text} compact />
+                </div>
+              )
+            }
+            const hunkIdx = seg.hunkIndex
+            const dec = decisions[hunkIdx]
+            return (
+              <div key={idx} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -8, paddingRight: 140 }}>
+                <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
+                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
+                </div>
+                <MarkdownRenderer content={seg.text} compact />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function computeMergedContent(
   decs: HunkDecision[],
@@ -57,7 +169,7 @@ function computeMergedContent(
 
 // ─── Plain editor (no proposal) ──────────────────────────────────────────────
 
-function PlainEditor() {
+function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPreview: React.Dispatch<React.SetStateAction<boolean>> }) {
   const files = useCourseStore((s) => s.files)
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const saveFile = useCourseStore((s) => s.saveFile)
@@ -66,6 +178,7 @@ function PlainEditor() {
   const [isDirty, setIsDirty] = useState(false)
   const currentValueRef = useRef<string>('')
   const savedContentRef = useRef<string>('')
+  const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const revision = fileRevisions[activeFilename ?? ''] ?? 0
@@ -85,11 +198,66 @@ function PlainEditor() {
     setIsDirty(false)
   }
 
+  // Ctrl+S while in preview mode (Monaco loses focus behind the overlay so its binding doesn't fire)
+  useEffect(() => {
+    if (!isPreview) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        void saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isPreview])
+
   const handleMount: OnMount = (editor, monacoInstance) => {
     editor.addCommand(
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
       () => { void saveRef.current() },
     )
+    editor.onKeyDown((e) => {
+      const sel = editor.getSelection()
+      const model = editor.getModel()
+      if (!sel || !model) return
+
+      // '>' typed over a multi-line selection → prefix each selected line with '> '
+      if (e.browserEvent.key === '>' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (sel.startLineNumber < sel.endLineNumber) {
+          e.preventDefault()
+          e.stopPropagation()
+          const ops = []
+          for (let line = sel.startLineNumber; line <= sel.endLineNumber; line++)
+            ops.push({ range: new monacoInstance.Range(line, 1, line, 1), text: '> ' })
+          editor.executeEdits('blockquote-add', ops)
+        }
+        return
+      }
+
+      // Ctrl+< → remove '> '/'>' prefix from selected lines
+      if (e.browserEvent.key === '<' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        const ops = []
+        for (let line = sel.startLineNumber; line <= sel.endLineNumber; line++) {
+          const m = model.getLineContent(line).match(/^(>\s?)/)
+          if (m) ops.push({ range: new monacoInstance.Range(line, 1, line, m[1].length + 1), text: '' })
+        }
+        if (ops.length) editor.executeEdits('blockquote-remove', ops)
+        return
+      }
+
+      // Enter → continue '>' prefix when current line starts with '> '
+      if (e.browserEvent.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (sel.startLineNumber === sel.endLineNumber) {
+          if (/^>\s/.test(model.getLineContent(sel.startLineNumber))) {
+            e.preventDefault()
+            e.stopPropagation()
+            editor.trigger('keyboard', 'type', { text: '\n> ' })
+          }
+        }
+      }
+    })
   }
 
   if (!activeFile) return null
@@ -99,14 +267,14 @@ function PlainEditor() {
       <div
         style={{
           padding: '8px 16px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          background: '#252526',
+          background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 13, color: '#cccccc', flex: 1 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>
           {activeFile.filename}
           {isDirty && (
             <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
@@ -114,15 +282,27 @@ function PlainEditor() {
             </span>
           )}
         </span>
+        <button
+          onClick={() => setIsPreview((v) => !v)}
+          style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
+        >
+          {isPreview ? 'Edit' : 'Preview'}
+        </button>
       </div>
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Preview overlay — sits on top of Monaco so the editor stays mounted and undo history is preserved */}
+        {isPreview && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+            <MarkdownRenderer content={isDirty ? currentValueRef.current : activeFile.content} />
+          </div>
+        )}
         <div style={{ position: 'absolute', inset: 0 }}>
           <Editor
             key={`${activeFilename}-${revision}`}
             width="100%"
             height="100%"
             language="markdown"
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             defaultValue={activeFile.content}
             onMount={handleMount}
             onChange={(value) => {
@@ -147,7 +327,7 @@ function PlainEditor() {
 
 // ─── Diff editor (proposal present) ──────────────────────────────────────────
 
-function DiffReview() {
+function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPreview: React.Dispatch<React.SetStateAction<boolean>> }) {
   const files = useCourseStore((s) => s.files)
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const proposals = useCourseStore((s) => s.proposals)
@@ -158,9 +338,14 @@ function DiffReview() {
   const initializedRef = useRef(false)
   const zoneIdsRef = useRef<string[]>([])
   const btnRefsRef = useRef<Array<{ accept: HTMLButtonElement; reject: HTMLButtonElement }>>([])
+  const leftScrollRef = useRef<HTMLDivElement | null>(null)
+  const rightScrollRef = useRef<HTMLDivElement | null>(null)
+  const syncingScroll = useRef(false)
   const [hunks, setHunks] = useState<ILineChange[]>([])
-  const [decisions, setDecisions] = useState<HunkDecision[]>([])  
+  const [decisions, setDecisions] = useState<HunkDecision[]>([])
+  const [openCallouts, setOpenCallouts] = useState<Record<number, boolean>>({})
   const [isApplying, setIsApplying] = useState(false)
+  const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const proposal = activeFilename ? proposals[activeFilename] : undefined
@@ -170,6 +355,7 @@ function DiffReview() {
     initializedRef.current = false
     setHunks([])
     setDecisions([])
+    setOpenCallouts({})
   }, [activeFilename, proposal?.proposed_content])
 
   const handleMount = useCallback((editor: IDiffEditor) => {
@@ -214,13 +400,13 @@ function DiffReview() {
 
         const acceptBtn = document.createElement('button')
         acceptBtn.textContent = 'Accept'
-        acceptBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
+        acceptBtn.style.cssText = `${WIDGET_BTN_BASE}background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.5);color:#4ade80;`
         acceptBtn.onclick = () =>
           setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
 
         const rejectBtn = document.createElement('button')
         rejectBtn.textContent = 'Reject'
-        rejectBtn.style.cssText = `background:#2a2a2a;border:1px solid #555;${WIDGET_BTN_BASE}`
+        rejectBtn.style.cssText = `${WIDGET_BTN_BASE}background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.5);color:#f87171;`
         rejectBtn.onclick = () =>
           setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
 
@@ -249,10 +435,12 @@ function DiffReview() {
     decisions.forEach((dec, i) => {
       const btns = btnRefsRef.current[i]
       if (!btns) return
-      btns.accept.style.background = dec.accepted === true ? '#1e7340' : '#2a2a2a'
-      btns.accept.style.borderColor = dec.accepted === true ? '#1e7340' : '#555'
-      btns.reject.style.background = dec.accepted === false ? '#6b3030' : '#2a2a2a'
-      btns.reject.style.borderColor = dec.accepted === false ? '#6b3030' : '#555'
+      btns.accept.style.background = dec.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)'
+      btns.accept.style.borderColor = dec.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'
+      btns.accept.style.color = dec.accepted === true ? '#fff' : '#4ade80'
+      btns.reject.style.background = dec.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)'
+      btns.reject.style.borderColor = dec.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'
+      btns.reject.style.color = dec.accepted === false ? '#fff' : '#f87171'
     })
   }, [decisions])
 
@@ -266,6 +454,25 @@ function DiffReview() {
     }
   }
 
+  async function handleAcceptAll() {
+    if (hunks.length > 0) {
+      await handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))
+    } else {
+      // Fallback: Monaco hasn't computed hunks yet (race), apply full proposal
+      if (!activeFilename || !proposal) return
+      setIsApplying(true)
+      try { await applyChanges(activeFilename, proposal.proposed_content) }
+      finally { setIsApplying(false) }
+    }
+  }
+
+  function syncScroll(from: HTMLDivElement | null, to: HTMLDivElement | null) {
+    if (syncingScroll.current || !from || !to) return
+    syncingScroll.current = true
+    to.scrollTop = from.scrollTop
+    syncingScroll.current = false
+  }
+
   if (!activeFile || !proposal) return null
 
   const allDecided = decisions.length > 0 && decisions.every((d) => d.accepted !== null)
@@ -276,24 +483,30 @@ function DiffReview() {
       <div
         style={{
           padding: '8px 16px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          background: '#252526',
+          background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 12, color: '#888', flex: 1 }}>{activeFile.filename}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1 }}>{activeFile.filename}</span>
         {allDecided && (
-          <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#0e639c' }}>
+          <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? 'rgba(255,255,255,0.08)' : '#2563eb' }}>
             {isApplying ? '...' : 'Apply selection'}
           </button>
         )}
-        <button onClick={() => handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? '#333' : '#1e7340' }}>
+        <button onClick={handleAcceptAll} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? 'rgba(255,255,255,0.08)' : '#16a34a' }}>
           {isApplying ? '...' : 'Accept all'}
         </button>
-        <button onClick={() => rejectProposal(activeFilename!)} style={{ ...BTN_BASE_STYLE, background: '#6b3030' }}>
+        <button onClick={() => rejectProposal(activeFilename!)} style={{ ...BTN_BASE_STYLE, background: '#dc2626' }}>
           Reject all
+        </button>
+        <button
+          onClick={() => setIsPreview((v) => !v)}
+          style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
+        >
+          {isPreview ? 'Code' : 'Preview'}
         </button>
       </div>
 
@@ -302,24 +515,25 @@ function DiffReview() {
         <div
           style={{
             padding: '6px 16px',
-            background: '#1e2a3a',
-            borderBottom: '1px solid #333',
+            background: 'var(--bg-info)',
+            borderBottom: '1px solid var(--border)',
             fontSize: 12,
-            color: '#9cdcfe',
+            color: 'var(--text-info)',
           }}
         >
           {proposal.description}
         </div>
       )}
 
-      {/* Monaco DiffEditor */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0 }}>
+      {/* Content area — Monaco always mounted; preview panels overlay it when active */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Monaco DiffEditor */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: isPreview ? 'none' : 'auto' }}>
           <DiffEditor
             width="100%"
             height="100%"
             language="markdown"
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             original={activeFile.content}
             modified={proposal.proposed_content}
             onMount={handleMount}
@@ -333,6 +547,53 @@ function DiffReview() {
             }}
           />
         </div>
+        {/* Preview panels overlay — z-index:101 sits above Monaco's view zone buttons (z-index:100) */}
+        {isPreview && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 101, display: 'flex', overflow: 'hidden', background: 'var(--bg-1)' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div ref={leftScrollRef} onScroll={() => syncScroll(leftScrollRef.current, rightScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+                  {buildAnnotatedContent(activeFile.content, hunks, 'original').map((seg, i) => {
+                    if (seg.kind === 'callout') {
+                      const open = openCallouts[i] ?? (seg.inner.some(s => s.hunkIndex !== null) || seg.defaultOpen)
+                      return <InlineCalloutContainer key={i} title={seg.title} calloutType={seg.calloutType} permanent={seg.permanent} inner={seg.inner} side="original" open={open} onToggle={() => setOpenCallouts(prev => ({ ...prev, [i]: !open }))} decisions={decisions} setDecisions={setDecisions} />
+                    }
+                    if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
+                    return (
+                      <div key={i} style={{ background: 'rgba(220,38,38,0.10)', borderLeft: '3px solid rgba(200,60,60,0.55)', paddingLeft: 8, marginLeft: -11 }}>
+                        <MarkdownRenderer content={seg.text} compact />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div ref={rightScrollRef} onScroll={() => syncScroll(rightScrollRef.current, leftScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+                  {buildAnnotatedContent(proposal.proposed_content, hunks, 'modified').map((seg, i) => {
+                    if (seg.kind === 'callout') {
+                      const open = openCallouts[i] ?? (seg.inner.some(s => s.hunkIndex !== null) || seg.defaultOpen)
+                      return <InlineCalloutContainer key={i} title={seg.title} calloutType={seg.calloutType} permanent={seg.permanent} inner={seg.inner} side="modified" open={open} onToggle={() => setOpenCallouts(prev => ({ ...prev, [i]: !open }))} decisions={decisions} setDecisions={setDecisions} />
+                    }
+                    if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
+                    const hunkIdx = seg.hunkIndex
+                    const dec = decisions[hunkIdx]
+                    const acceptBtn = <button key="a" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
+                    const rejectBtn = <button key="r" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
+                    return (
+                      <div key={i} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -11, paddingRight: 140 }}>
+                        <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', alignItems: 'center', gap: 4 }}>{acceptBtn}{rejectBtn}</div>
+                        <MarkdownRenderer content={seg.text} compact />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -344,9 +605,12 @@ export function FileView() {
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const proposals = useCourseStore((s) => s.proposals)
   const files = useCourseStore((s) => s.files)
-
+  const [isPreview, setIsPreview] = useState(false)
   const hasProposal = activeFilename ? !!proposals[activeFilename] : false
   const hasFile = files.some((f) => f.filename === activeFilename)
+
+  useEffect(() => { setIsPreview(false) }, [activeFilename])
+  useEffect(() => { if (hasProposal) setIsPreview(false) }, [hasProposal])
 
   if (!activeFilename || !hasFile) {
     return (
@@ -356,7 +620,7 @@ export function FileView() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#555',
+          color: 'var(--text-3)',
           fontSize: 14,
         }}
       >
@@ -365,5 +629,5 @@ export function FileView() {
     )
   }
 
-  return hasProposal ? <DiffReview /> : <PlainEditor />
+  return hasProposal ? <DiffReview isPreview={isPreview} setIsPreview={setIsPreview} /> : <PlainEditor isPreview={isPreview} setIsPreview={setIsPreview} />
 }

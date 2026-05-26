@@ -50,14 +50,14 @@ export function ChatPanel() {
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: '1px solid #333',
-        background: '#1e1e1e',
+        borderLeft: '1px solid var(--border)',
+        background: 'var(--bg-1)',
         height: '100%',
         overflow: 'hidden',
       }}
     >
       {/* ── Conversation list ─────────────────────────────────── */}
-      <div style={{ borderBottom: '1px solid #333', flexShrink: 0 }}>
+      <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         {/* Header */}
         <div
           style={{
@@ -71,7 +71,7 @@ export function ChatPanel() {
             style={{
               fontSize: 11,
               fontWeight: 700,
-              color: '#888',
+              color: 'var(--text-2)',
               textTransform: 'uppercase',
               letterSpacing: 1,
             }}
@@ -90,7 +90,7 @@ export function ChatPanel() {
         {/* List */}
         <div style={{ maxHeight: 160, overflowY: 'auto' }}>
           {conversations.length === 0 && (
-            <p style={{ color: '#555', fontSize: 12, padding: '4px 12px 8px' }}>
+            <p style={{ color: 'var(--text-3)', fontSize: 12, padding: '4px 12px 8px' }}>
               No conversations
             </p>
           )}
@@ -119,10 +119,10 @@ export function ChatPanel() {
       <div
         style={{
           padding: '7px 12px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--border)',
           fontWeight: 600,
           fontSize: 13,
-          color: '#cccccc',
+          color: 'var(--text-1)',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
@@ -141,12 +141,12 @@ export function ChatPanel() {
       {/* ── Messages ──────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 0' }}>
         {!activeConv && (
-          <p style={{ color: '#555', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
+          <p style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
             Start a conversation or send a message…
           </p>
         )}
         {activeConv && messages.length === 0 && (
-          <p style={{ color: '#555', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
+          <p style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', marginTop: 40 }}>
             Ask Mathesis to create a course…
           </p>
         )}
@@ -157,7 +157,7 @@ export function ChatPanel() {
       </div>
 
       {/* ── Input ─────────────────────────────────────────────── */}
-      <div style={{ padding: 10, borderTop: '1px solid #333', flexShrink: 0 }}>
+      <div style={{ padding: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <textarea
             value={input}
@@ -168,10 +168,10 @@ export function ChatPanel() {
             rows={3}
             style={{
               flex: 1,
-              background: '#2d2d2d',
-              border: '1px solid #444',
+              background: 'var(--bg-3)',
+              border: '1px solid var(--border-2)',
               borderRadius: 6,
-              color: '#cccccc',
+              color: 'var(--text-1)',
               padding: '8px 10px',
               fontSize: 13,
               resize: 'none',
@@ -183,7 +183,7 @@ export function ChatPanel() {
             onClick={handleSend}
             disabled={isStreaming || !input.trim()}
             style={{
-              background: isStreaming || !input.trim() ? '#333' : '#0e639c',
+              background: isStreaming || !input.trim() ? 'var(--bg-3)' : '#0e639c',
               border: 'none',
               borderRadius: 6,
               color: '#fff',
@@ -207,12 +207,12 @@ export function ChatPanel() {
             position: 'fixed',
             top: contextMenu.y,
             left: contextMenu.x,
-            background: '#2d2d2d',
-            border: '1px solid #444',
+            background: 'var(--bg-3)',
+            border: '1px solid var(--border-2)',
             borderRadius: 4,
             zIndex: 1000,
             minWidth: 150,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             overflow: 'hidden',
           }}
         >

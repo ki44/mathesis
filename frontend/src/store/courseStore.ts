@@ -264,18 +264,38 @@ export const useCourseStore = create<CourseState>((set, get) => ({
 
   deleteFolder: async (path) => {
     const prefix = path + '/'
-    const filesToSave = get().files
+    const snapshot = get()
+    const filesToSave = snapshot.files
       .filter((f) => f.filename.startsWith(prefix))
       .map((f) => ({ filename: f.filename, content: f.content }))
-    set((state) => ({
-      undoStack: [...state.undoStack, { kind: 'folder' as const, path, files: filesToSave }],
-      folders: state.folders.filter((f) => f.path !== path && !f.path.startsWith(prefix)),
-      files: state.files.filter((f) => !f.filename.startsWith(prefix)),
-    }))
+    set((state) => {
+      const openFiles = state.openFiles.filter((f) => !f.startsWith(prefix))
+      const pinnedFiles = state.pinnedFiles.filter((f) => !f.startsWith(prefix))
+      const activeFilename = state.activeFilename?.startsWith(prefix)
+        ? (openFiles[openFiles.length - 1] ?? null)
+        : state.activeFilename
+      const proposals = Object.fromEntries(Object.entries(state.proposals).filter(([k]) => !k.startsWith(prefix)))
+      return {
+        undoStack: [...state.undoStack, { kind: 'folder' as const, path, files: filesToSave }],
+        folders: state.folders.filter((f) => f.path !== path && !f.path.startsWith(prefix)),
+        files: state.files.filter((f) => !f.filename.startsWith(prefix)),
+        openFiles,
+        pinnedFiles,
+        activeFilename,
+        proposals,
+      }
+    })
     const res = await fetch(`/api/folders/${encodeURIComponent(path)}`, { method: 'DELETE' })
     if (!res.ok) {
-      await get().fetchFiles()
-      await get().fetchFolders()
+      set({
+        files: snapshot.files,
+        folders: snapshot.folders,
+        openFiles: snapshot.openFiles,
+        pinnedFiles: snapshot.pinnedFiles,
+        activeFilename: snapshot.activeFilename,
+        proposals: snapshot.proposals,
+        undoStack: snapshot.undoStack,
+      })
       throw new Error(await res.text())
     }
   },

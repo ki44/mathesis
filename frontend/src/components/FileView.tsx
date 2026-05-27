@@ -266,22 +266,18 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div
         style={{
-          padding: '8px 16px',
+          padding: '4px 16px',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
+          justifyContent: 'flex-end',
+          gap: 8,
           background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>
-          {activeFile.filename}
-          {isDirty && (
-            <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', marginLeft: 6 }}>
-              ●
-            </span>
-          )}
-        </span>
+        {isDirty && (
+          <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', fontSize: 12 }}>●</span>
+        )}
         <button
           onClick={() => setIsPreview((v) => !v)}
           style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
@@ -605,11 +601,11 @@ export function FileView() {
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const proposals = useCourseStore((s) => s.proposals)
   const files = useCourseStore((s) => s.files)
-  const [isPreview, setIsPreview] = useState(false)
+  const [isPreview, setIsPreview] = useState(true)
   const hasProposal = activeFilename ? !!proposals[activeFilename] : false
   const hasFile = files.some((f) => f.filename === activeFilename)
 
-  useEffect(() => { setIsPreview(false) }, [activeFilename])
+  useEffect(() => { setIsPreview(true) }, [activeFilename])
   useEffect(() => { if (hasProposal) setIsPreview(false) }, [hasProposal])
 
   if (!activeFilename || !hasFile) {

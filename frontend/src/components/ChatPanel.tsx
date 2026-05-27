@@ -299,7 +299,13 @@ export function ChatPanel() {
           <button
             onClick={() => {
               setMsgCtxMenu(null)
-              forkConversation(activeConversationId, msgCtxMenu.msgIndex)
+              // Compute display-index using the same rules as the server's _to_display_messages:
+              // only user messages, non-empty assistant messages, and tool_call messages count.
+              const displayIdx = messages
+                .slice(0, msgCtxMenu.msgIndex + 1)
+                .filter((m) => m.role === 'user' || m.role === 'tool_call' || (m.role === 'assistant' && !!m.content))
+                .length - 1
+              forkConversation(activeConversationId, displayIdx)
             }}
             style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', color: 'var(--text-1)', fontSize: 13 }}
           >

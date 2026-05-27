@@ -88,23 +88,34 @@ def _to_display_messages(llm_history: list[dict]) -> list[dict]:
 
 
 def _find_history_slice_end(history: list[dict], display_index: int) -> int:
-    """Return exclusive end index into history for the given 0-based display message index."""
+    """Return exclusive end index into history for the given 0-based display message index.
+
+    Extends the slice past any immediately-following role='tool' messages so that an
+    assistant message with tool_calls is never left without its tool results.
+    """
+
+    def _end(i: int) -> int:
+        end = i + 1
+        while end < len(history) and history[end].get("role") == "tool":
+            end += 1
+        return end
+
     count = 0
     for i, msg in enumerate(history):
         role = msg.get("role")
         if role == "user":
             if isinstance(msg.get("content"), str):
                 if count == display_index:
-                    return i + 1
+                    return _end(i)
                 count += 1
         elif role == "assistant":
             if msg.get("content"):
                 if count == display_index:
-                    return i + 1
+                    return _end(i)
                 count += 1
             for _ in msg.get("tool_calls") or []:
                 if count == display_index:
-                    return i + 1
+                    return _end(i)
                 count += 1
     return len(history)
 
@@ -441,6 +452,10 @@ async def delete_folder(path: str, db: aiosqlite.Connection = Depends(get_db_ses
 async def rename_folder(body: FolderRenameRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     """Rename a folder: updates its entry and renames all files whose paths begin with old_path/."""
     await _fetchone_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (body.old_path,), "Folder not found")
+    # Preflight: ensure destination folder doesn't already exist before any mutations
+    collision_folder = await db.execute("SELECT 1 FROM folders WHERE path = ?", (body.new_path,))
+    if await collision_folder.fetchone():
+        raise HTTPException(status_code=409, detail="A folder already exists at the destination")
     prefix = body.old_path + "/"
     cursor = await db.execute("SELECT filename, content FROM course_files WHERE filename LIKE ?", (prefix + "%",))
     affected = await cursor.fetchall()

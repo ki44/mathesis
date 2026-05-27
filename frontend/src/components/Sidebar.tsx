@@ -204,7 +204,7 @@ export function Sidebar() {
   const copyFile = useCourseStore((s) => s.copyFile)
   const setClipboard = useCourseStore((s) => s.setClipboard)
   const pasteItem = useCourseStore((s) => s.pasteItem)
-  const undoDelete = useCourseStore((s) => s.undoDelete)
+  const undoLast = useCourseStore((s) => s.undoLast)
   const undoStack = useCourseStore((s) => s.undoStack)
 
   const { theme, toggle } = useThemeStore()
@@ -339,13 +339,16 @@ export function Sidebar() {
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
   useEffect(() => {
+    const isEditable = (el: EventTarget | null) =>
+      el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-        if (undoStack.length > 0) { e.preventDefault(); undoDelete(); return }
+        if (isEditable(e.target)) return
+        if (undoStack.length > 0) { e.preventDefault(); undoLast(); return }
       }
       if (e.key === 'Escape') { setPendingDelete(null); return }
 
-      if (!focusedPath) return
+      if (!focusedPath || isEditable(e.target)) return
       const node = findNode(tree, focusedPath)
       if (!node) return
 

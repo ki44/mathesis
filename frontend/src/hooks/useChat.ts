@@ -15,7 +15,7 @@ export function useChat() {
   const fetchFiles = useCourseStore((s) => s.fetchFiles)
 
   const stream = useCallback(
-    async (text: string, convId: string, rerun: boolean) => {
+    async (text: string, convId: string, rerun: boolean, variantOverride: Array<{ role: string; content: string }> | null = null) => {
       let asstId = addMessage(convId, { role: 'assistant', content: '' })
       let needNewAsst = false
       setIsStreaming(true)
@@ -24,7 +24,7 @@ export function useChat() {
         const res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, conversation_id: convId, rerun }),
+          body: JSON.stringify({ message: text, conversation_id: convId, rerun, variant_override: variantOverride }),
         })
 
         const reader = res.body!.getReader()
@@ -80,8 +80,20 @@ export function useChat() {
     async (text: string) => {
       const convId = activeConversationId ?? newConversation()
       addMessage(convId, { role: 'user', content: text })
+
+      // If the user is viewing an older variant (not the most recent run), capture its
+      // assistant messages so the backend can continue from the correct history context.
+      const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+      const vr = conv?.variantRuns
+      const variantOverride =
+        vr && vr.activeIndex < vr.runs.length - 1
+          ? vr.runs[vr.activeIndex]
+              .filter((m) => m.role === 'assistant')
+              .map((m) => ({ role: 'assistant', content: m.content }))
+          : null
+
       clearVariantRuns(convId)
-      await stream(text, convId, false)
+      await stream(text, convId, false, variantOverride)
     },
     [activeConversationId, newConversation, addMessage, clearVariantRuns, stream],
   )

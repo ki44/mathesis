@@ -23,6 +23,10 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="The user's message")
     conversation_id: str | None = Field(None, description="Conversation ID (optional)")
     rerun: bool = Field(False, description="If True, strip the last user turn from history before generating")
+    variant_override: list[dict] | None = Field(
+        None,
+        description="When set, replaces the last response in history with these messages (selected variant)",
+    )
 
 
 class CourseFile(BaseModel):

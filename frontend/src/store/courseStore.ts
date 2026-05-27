@@ -43,8 +43,8 @@ interface CourseState {
   pasteItem: (targetFolder: string | null) => Promise<void>
 
   // ── undo ───────────────────────────────────────────────────────────────────
-  undoStack: Array<{ kind: 'file'; filename: string; content: string } | { kind: 'folder'; path: string; files: Array<{ filename: string; content: string }> }>
-  undoDelete: () => Promise<void>
+  undoStack: Array<() => Promise<void>>
+  undoLast: () => Promise<void>
 }
 
 export const useCourseStore = create<CourseState>((set, get) => ({
@@ -140,7 +140,13 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     })
     if (!res.ok) throw new Error(await res.text())
     const file: CourseFile = await res.json()
-    set((state) => ({ files: [...state.files, file].sort((a, b) => a.filename.localeCompare(b.filename)) }))
+    set((state) => ({
+      files: [...state.files, file].sort((a, b) => a.filename.localeCompare(b.filename)),
+      undoStack: [...state.undoStack, async () => {
+        const r = await fetch(`/api/courses/${encodeURIComponent(filename)}`, { method: 'DELETE' })
+        if (r.ok) set((s) => { const p = { ...s.proposals }; delete p[filename]; return { files: s.files.filter((f) => f.filename !== filename), proposals: p } })
+      }],
+    }))
   },
 
   applyChanges: async (filename, content) => {
@@ -196,7 +202,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       delete proposals[filename]
       const activeFilename =
         state.activeFilename === filename ? (openFiles[openFiles.length - 1] ?? null) : state.activeFilename
-      return { files, openFiles, pinnedFiles, proposals, activeFilename, undoStack: [...state.undoStack, { kind: 'file' as const, filename, content }] }
+      return { files, openFiles, pinnedFiles, proposals, activeFilename }
     })
     const res = await fetch(`/api/courses/${encodeURIComponent(filename)}`, { method: 'DELETE' })
     if (!res.ok) {
@@ -206,9 +212,15 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         pinnedFiles: snapshot.pinnedFiles,
         proposals: snapshot.proposals,
         activeFilename: snapshot.activeFilename,
-        undoStack: snapshot.undoStack,
       })
+      throw new Error(await res.text())
     }
+    set((state) => ({
+      undoStack: [...state.undoStack, async () => {
+        const r = await fetch('/api/courses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename, content }) })
+        if (r.ok) { const file: CourseFile = await r.json(); set((s) => ({ files: [...s.files, file].sort((a, b) => a.filename.localeCompare(b.filename)) })) }
+      }],
+    }))
   },
 
   renameFile: async (oldFilename, newFilename) => {
@@ -231,6 +243,22 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         pinnedFiles: state.pinnedFiles.map((f) => (f === oldFilename ? newFilename : f)),
         activeFilename: state.activeFilename === oldFilename ? newFilename : state.activeFilename,
         proposals,
+        undoStack: [...state.undoStack, async () => {
+          const r = await fetch('/api/file-ops/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_filename: newFilename, new_filename: oldFilename }) })
+          if (!r.ok) return
+          const rev: CourseFile = await r.json()
+          set((s) => {
+            const p = { ...s.proposals }
+            if (p[newFilename]) { p[oldFilename] = { ...p[newFilename], filename: oldFilename }; delete p[newFilename] }
+            return {
+              files: s.files.map((f) => (f.filename === newFilename ? rev : f)),
+              openFiles: s.openFiles.map((f) => (f === newFilename ? oldFilename : f)),
+              pinnedFiles: s.pinnedFiles.map((f) => (f === newFilename ? oldFilename : f)),
+              activeFilename: s.activeFilename === newFilename ? oldFilename : s.activeFilename,
+              proposals: p,
+            }
+          })
+        }],
       }
     })
   },
@@ -259,7 +287,13 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     })
     if (!res.ok) throw new Error(await res.text())
     const folder: FolderEntry = await res.json()
-    set((state) => ({ folders: [...state.folders, folder].sort((a, b) => a.path.localeCompare(b.path)) }))
+    set((state) => ({
+      folders: [...state.folders, folder].sort((a, b) => a.path.localeCompare(b.path)),
+      undoStack: [...state.undoStack, async () => {
+        const r = await fetch(`/api/folders/${encodeURIComponent(path)}`, { method: 'DELETE' })
+        if (r.ok) set((s) => ({ folders: s.folders.filter((f) => f.path !== path && !f.path.startsWith(path + '/')) }))
+      }],
+    }))
   },
 
   deleteFolder: async (path) => {
@@ -268,6 +302,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     const filesToSave = snapshot.files
       .filter((f) => f.filename.startsWith(prefix))
       .map((f) => ({ filename: f.filename, content: f.content }))
+    const subFoldersToSave = snapshot.folders.filter((f) => f.path.startsWith(prefix))
     set((state) => {
       const openFiles = state.openFiles.filter((f) => !f.startsWith(prefix))
       const pinnedFiles = state.pinnedFiles.filter((f) => !f.startsWith(prefix))
@@ -276,7 +311,6 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         : state.activeFilename
       const proposals = Object.fromEntries(Object.entries(state.proposals).filter(([k]) => !k.startsWith(prefix)))
       return {
-        undoStack: [...state.undoStack, { kind: 'folder' as const, path, files: filesToSave }],
         folders: state.folders.filter((f) => f.path !== path && !f.path.startsWith(prefix)),
         files: state.files.filter((f) => !f.filename.startsWith(prefix)),
         openFiles,
@@ -294,10 +328,23 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         pinnedFiles: snapshot.pinnedFiles,
         activeFilename: snapshot.activeFilename,
         proposals: snapshot.proposals,
-        undoStack: snapshot.undoStack,
       })
       throw new Error(await res.text())
     }
+    set((state) => ({
+      undoStack: [...state.undoStack, async () => {
+        const r0 = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) })
+        if (r0.ok) { const f: FolderEntry = await r0.json(); set((s) => ({ folders: [...s.folders, f].sort((a, b) => a.path.localeCompare(b.path)) })) }
+        for (const sf of subFoldersToSave) {
+          const r = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: sf.path }) })
+          if (r.ok) { const f: FolderEntry = await r.json(); set((s) => ({ folders: [...s.folders, f].sort((a, b) => a.path.localeCompare(b.path)) })) }
+        }
+        for (const f of filesToSave) {
+          const r = await fetch('/api/courses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: f.filename, content: f.content }) })
+          if (r.ok) { const file: CourseFile = await r.json(); set((s) => ({ files: [...s.files, file].sort((a, b) => a.filename.localeCompare(b.filename)) })) }
+        }
+      }],
+    }))
   },
 
   renameFolder: async (oldPath, newPath) => {
@@ -339,23 +386,47 @@ export const useCourseStore = create<CourseState>((set, get) => ({
           ? newPath + '/' + state.activeFilename.slice(prefix.length)
           : state.activeFilename,
         proposals,
+        undoStack: [...state.undoStack, async () => {
+          const r = await fetch('/api/folder-ops/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_path: newPath, new_path: oldPath }) })
+          if (!r.ok) return
+          const revertedFiles: CourseFile[] = await r.json()
+          const newPrefix = newPath + '/'
+          set((s) => {
+            const p = { ...s.proposals }
+            for (const f of revertedFiles) {
+              const prevName = newPath + '/' + f.filename.slice(oldPath.length + 1)
+              if (p[prevName]) { p[f.filename] = { ...p[prevName], filename: f.filename }; delete p[prevName] }
+            }
+            return {
+              folders: s.folders.map((f) =>
+                f.path === newPath ? { ...f, path: oldPath }
+                : f.path.startsWith(newPrefix) ? { ...f, path: oldPath + '/' + f.path.slice(newPrefix.length) }
+                : f
+              ),
+              files: s.files.map((f) => {
+                if (!f.filename.startsWith(newPrefix)) return f
+                const rev = revertedFiles.find((u) => u.filename === oldPath + '/' + f.filename.slice(newPrefix.length))
+                return rev ?? f
+              }),
+              openFiles: s.openFiles.map((f) => f.startsWith(newPrefix) ? oldPath + '/' + f.slice(newPrefix.length) : f),
+              pinnedFiles: s.pinnedFiles.map((f) => f.startsWith(newPrefix) ? oldPath + '/' + f.slice(newPrefix.length) : f),
+              activeFilename: s.activeFilename?.startsWith(newPrefix) ? oldPath + '/' + s.activeFilename.slice(newPrefix.length) : s.activeFilename,
+              proposals: p,
+            }
+          })
+        }],
       }
     })
   },
 
   // ── undo ───────────────────────────────────────────────────────────────────
 
-  undoDelete: async () => {
-    const { undoStack, createFile, createFolder } = get()
+  undoLast: async () => {
+    const { undoStack } = get()
     if (undoStack.length === 0) return
-    const entry = undoStack[undoStack.length - 1]
+    const cmd = undoStack[undoStack.length - 1]
     set((state) => ({ undoStack: state.undoStack.slice(0, -1) }))
-    if (entry.kind === 'file') {
-      await createFile(entry.filename, entry.content)
-    } else {
-      await createFolder(entry.path)
-      for (const f of entry.files) await createFile(f.filename, f.content)
-    }
+    await cmd()
   },
 
   // ── clipboard ──────────────────────────────────────────────────────────────
@@ -380,7 +451,12 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         set({ clipboard: null })
       }
     } else {
-      const target = buildTarget(clipboard.path)
+      let target = buildTarget(clipboard.path)
+      if (target === clipboard.path) {
+        const base = target.includes('/') ? target.split('/').pop()! : target
+        const parent = target.includes('/') ? target.slice(0, target.lastIndexOf('/')) : null
+        target = parent ? `${parent}/${base} copy` : `${base} copy`
+      }
       if (clipboard.type === 'copy') {
         const prefix = clipboard.path + '/'
         const toCopy = files.filter((f) => f.filename.startsWith(prefix))

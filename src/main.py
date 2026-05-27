@@ -178,6 +178,16 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 history = history[:i]
                 break
 
+    # When variant_override is set, replace everything after the last user message
+    # with the content of the user-selected variant before appending the new turn.
+    if request.variant_override:
+        for i in range(len(history) - 1, -1, -1):
+            if history[i].get("role") == "user":
+                history = history[: i + 1]
+                break
+        for msg in request.variant_override:
+            history.append({"role": "assistant", "content": msg.get("content", "")})
+
     async def event_generator():
         async for event in agent.stream(request.message, history):
             yield event
@@ -452,11 +462,16 @@ async def delete_folder(path: str, db: aiosqlite.Connection = Depends(get_db_ses
 async def rename_folder(body: FolderRenameRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     """Rename a folder: updates its entry and renames all files whose paths begin with old_path/."""
     await _fetchone_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (body.old_path,), "Folder not found")
-    # Preflight: ensure destination folder doesn't already exist before any mutations
+    # Preflight: ensure destination folder and all sub-folder destinations don't already exist
     collision_folder = await db.execute("SELECT 1 FROM folders WHERE path = ?", (body.new_path,))
     if await collision_folder.fetchone():
         raise HTTPException(status_code=409, detail="A folder already exists at the destination")
     prefix = body.old_path + "/"
+    sub_cursor = await db.execute("SELECT path FROM folders WHERE path LIKE ?", (prefix + "%",))
+    for sub_row in await sub_cursor.fetchall():
+        new_sub_path = body.new_path + "/" + sub_row["path"][len(prefix) :]
+        if await (await db.execute("SELECT 1 FROM folders WHERE path = ?", (new_sub_path,))).fetchone():
+            raise HTTPException(status_code=409, detail=f"A folder already exists at '{new_sub_path}'")
     cursor = await db.execute("SELECT filename, content FROM course_files WHERE filename LIKE ?", (prefix + "%",))
     affected = await cursor.fetchall()
     updated_files: list[CourseFile] = []

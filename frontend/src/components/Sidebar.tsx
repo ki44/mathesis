@@ -462,7 +462,7 @@ export function Sidebar() {
 function CreateRow({ depth }: { depth: number }) {
   const { creating, createValue, setCreateValue, createInputRef, commitCreate, cancelCreate } = useSidebarCtx()
   if (!creating) return null
-  const indent = depth * 8 + 4 + 12 + 15 + 3 + 3  // base + arrow + icon + gaps
+  const indent = depth * 8 + 4 + 16 + 3  // base + arrow/icon col + gap
   return (
     <div style={{ display: 'flex', alignItems: 'center', paddingLeft: indent, paddingRight: 10, height: 26 }}>
       <input
@@ -549,11 +549,10 @@ function TreeNodeView({ node, depth }: { node: TreeNode; depth: number }) {
           boxSizing: 'border-box',
         }}
       >
-        {/* Collapse arrow */}
-        <span style={{ width: 12, flexShrink: 0, fontSize: 8, color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {node.kind === 'folder' ? (isCollapsed ? '▶' : '▼') : ''}
+        {/* Collapse arrow / file type icon — shared column */}
+        <span style={{ width: 16, flexShrink: 0, fontSize: 8, color: 'var(--text-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {node.kind === 'folder' ? (isCollapsed ? '▶' : '▼') : <FileIcon filename={node.name} />}
         </span>
-        {node.kind === 'file' && <FileIcon filename={node.name} />}
 
         {renamingPath === node.path ? (
           <input

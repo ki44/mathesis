@@ -61,7 +61,12 @@ export const useCourseStore = create<CourseState>((set, get) => ({
 
   setActiveFilename: (filename) => {
     set({ activeFilename: filename })
-    if (filename) get().openFile(filename)
+    if (filename) {
+      get().openFile(filename)
+      localStorage.setItem('mathesis:activeFilename', filename)
+    } else {
+      localStorage.removeItem('mathesis:activeFilename')
+    }
   },
 
   openFile: (filename) =>
@@ -94,6 +99,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     if (!res.ok) return
     const files: CourseFile[] = await res.json()
     set({ files })
+    const saved = localStorage.getItem('mathesis:activeFilename')
+    if (saved && files.some((f) => f.filename === saved)) get().setActiveFilename(saved)
   },
 
   fetchFolders: async () => {

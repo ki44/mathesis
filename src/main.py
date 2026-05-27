@@ -429,7 +429,7 @@ async def create_folder(body: FolderCreate, db: aiosqlite.Connection = Depends(g
 
 @app.delete("/api/folders/{path:path}", status_code=204)
 async def delete_folder(path: str, db: aiosqlite.Connection = Depends(get_db_session)):
-    await _execute_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (path,), "Folder not found")
+    await _fetchone_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (path,), "Folder not found")
     prefix = path + "/"
     await db.execute("DELETE FROM proposals WHERE filename LIKE ?", (prefix + "%",))
     await db.execute("DELETE FROM course_files WHERE filename LIKE ?", (prefix + "%",))
@@ -440,7 +440,7 @@ async def delete_folder(path: str, db: aiosqlite.Connection = Depends(get_db_ses
 @app.post("/api/folder-ops/rename", response_model=list[CourseFile])
 async def rename_folder(body: FolderRenameRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     """Rename a folder: updates its entry and renames all files whose paths begin with old_path/."""
-    await _execute_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (body.old_path,), "Folder not found")
+    await _fetchone_or_404(db, "SELECT 1 FROM folders WHERE path = ?", (body.old_path,), "Folder not found")
     prefix = body.old_path + "/"
     cursor = await db.execute("SELECT filename, content FROM course_files WHERE filename LIKE ?", (prefix + "%",))
     affected = await cursor.fetchall()
@@ -448,6 +448,9 @@ async def rename_folder(body: FolderRenameRequest, db: aiosqlite.Connection = De
     for file_row in affected:
         old_fname = file_row["filename"]
         new_fname = body.new_path + "/" + old_fname[len(prefix) :]
+        collision = await db.execute("SELECT 1 FROM course_files WHERE filename = ?", (new_fname,))
+        if await collision.fetchone():
+            raise HTTPException(status_code=409, detail=f"File already exists: {new_fname}")
         await db.execute("INSERT INTO course_files (filename, content) VALUES (?, ?)", (new_fname, file_row["content"]))
         await db.execute("DELETE FROM course_files WHERE filename = ?", (old_fname,))
         # Migrate proposal
@@ -463,10 +466,10 @@ async def rename_folder(body: FolderRenameRequest, db: aiosqlite.Connection = De
             "SELECT filename, content, updated_at FROM course_files WHERE filename = ?", (new_fname,)
         )
         updated_files.append(CourseFile.model_validate(dict(await cur3.fetchone())))
-    # Also rename sub-folders
+    # Also rename sub-folders (use prefix-aware substr to avoid corrupting paths containing the old name)
     await db.execute(
-        "UPDATE folders SET path = replace(path, ?, ?) WHERE path = ? OR path LIKE ?",
-        (body.old_path, body.new_path, body.old_path, prefix + "%"),
+        "UPDATE folders SET path = ? || substr(path, length(?) + 1) WHERE path = ? OR path LIKE ?",
+        (body.new_path, body.old_path, body.old_path, prefix + "%"),
     )
     await db.commit()
     return updated_files

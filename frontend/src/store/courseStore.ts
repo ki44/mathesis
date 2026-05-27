@@ -43,7 +43,7 @@ interface CourseState {
   pasteItem: (targetFolder: string | null) => Promise<void>
 
   // ── undo ───────────────────────────────────────────────────────────────────
-  undoStack: Array<{ kind: 'file'; filename: string; content: string } | { kind: 'folder'; path: string }>
+  undoStack: Array<{ kind: 'file'; filename: string; content: string } | { kind: 'folder'; path: string; files: Array<{ filename: string; content: string }> }>
   undoDelete: () => Promise<void>
 }
 
@@ -253,15 +253,21 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   },
 
   deleteFolder: async (path) => {
-    const { undoStack: stackSnapshot } = get()
-    set((state) => ({ undoStack: [...state.undoStack, { kind: 'folder' as const, path }] }))
-    const res = await fetch(`/api/folders/${encodeURIComponent(path)}`, { method: 'DELETE' })
-    if (!res.ok) { set({ undoStack: stackSnapshot }); throw new Error(await res.text()) }
     const prefix = path + '/'
+    const filesToSave = get().files
+      .filter((f) => f.filename.startsWith(prefix))
+      .map((f) => ({ filename: f.filename, content: f.content }))
     set((state) => ({
+      undoStack: [...state.undoStack, { kind: 'folder' as const, path, files: filesToSave }],
       folders: state.folders.filter((f) => f.path !== path && !f.path.startsWith(prefix)),
       files: state.files.filter((f) => !f.filename.startsWith(prefix)),
     }))
+    const res = await fetch(`/api/folders/${encodeURIComponent(path)}`, { method: 'DELETE' })
+    if (!res.ok) {
+      await get().fetchFiles()
+      await get().fetchFolders()
+      throw new Error(await res.text())
+    }
   },
 
   renameFolder: async (oldPath, newPath) => {
@@ -291,6 +297,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
               : f,
         ),
         files: state.files.map((f) => {
+          if (!f.filename.startsWith(prefix)) return f
           const updated = updatedFiles.find((u) => u.filename === newPath + '/' + f.filename.slice(prefix.length))
           return updated ?? f
         }),
@@ -313,8 +320,12 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     if (undoStack.length === 0) return
     const entry = undoStack[undoStack.length - 1]
     set((state) => ({ undoStack: state.undoStack.slice(0, -1) }))
-    if (entry.kind === 'file') await createFile(entry.filename, entry.content)
-    else await createFolder(entry.path)
+    if (entry.kind === 'file') {
+      await createFile(entry.filename, entry.content)
+    } else {
+      await createFolder(entry.path)
+      for (const f of entry.files) await createFile(f.filename, f.content)
+    }
   },
 
   // ── clipboard ──────────────────────────────────────────────────────────────
@@ -343,10 +354,16 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       if (clipboard.type === 'copy') {
         const prefix = clipboard.path + '/'
         const toCopy = files.filter((f) => f.filename.startsWith(prefix))
+        const subFolders = get().folders.filter(
+          (f) => f.path !== clipboard.path && f.path.startsWith(prefix),
+        )
+        await createFolder(target).catch(() => {})
+        for (const sf of subFolders) {
+          await createFolder(target + '/' + sf.path.slice(prefix.length)).catch(() => {})
+        }
         for (const f of toCopy) {
           await copyFile(f.filename, `${target}/${f.filename.slice(prefix.length)}`)
         }
-        await createFolder(target).catch(() => {})
       } else {
         await renameFolder(clipboard.path, target)
         set({ clipboard: null })

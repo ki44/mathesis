@@ -233,7 +233,6 @@ export function ChatPanel() {
               onClick={handleSend}
               disabled={isStreaming || !input.trim()}
               style={{
-                flex: 1,
                 background: isStreaming || !input.trim() ? 'var(--bg-3)' : '#0e639c',
                 border: 'none',
                 borderRadius: 6,

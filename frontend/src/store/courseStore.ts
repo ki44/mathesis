@@ -186,7 +186,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   },
 
   deleteFile: async (filename) => {
-    const content = get().files.find((f) => f.filename === filename)?.content ?? ''
+    const snapshot = get()
+    const content = snapshot.files.find((f) => f.filename === filename)?.content ?? ''
     set((state) => {
       const files = state.files.filter((f) => f.filename !== filename)
       const openFiles = state.openFiles.filter((f) => f !== filename)
@@ -198,7 +199,16 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       return { files, openFiles, pinnedFiles, proposals, activeFilename, undoStack: [...state.undoStack, { kind: 'file' as const, filename, content }] }
     })
     const res = await fetch(`/api/courses/${encodeURIComponent(filename)}`, { method: 'DELETE' })
-    if (!res.ok) await get().fetchFiles()
+    if (!res.ok) {
+      set({
+        files: snapshot.files,
+        openFiles: snapshot.openFiles,
+        pinnedFiles: snapshot.pinnedFiles,
+        proposals: snapshot.proposals,
+        activeFilename: snapshot.activeFilename,
+        undoStack: snapshot.undoStack,
+      })
+    }
   },
 
   renameFile: async (oldFilename, newFilename) => {

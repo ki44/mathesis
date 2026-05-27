@@ -150,7 +150,7 @@ export function TabBar() {
                   color: 'var(--text-bright)',
                   fontSize: 12,
                   padding: '1px 4px',
-                  width: Math.max(80, renameValue.length * 7),
+                  minWidth: 80,
                   outline: 'none',
                 }}
               />

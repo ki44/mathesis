@@ -104,7 +104,7 @@ export function ChatPanel() {
             return (
               <div
                 key={conv.id}
-                onClick={() => !isRenaming && selectConversation(conv.id)}
+                onClick={() => { if (!isRenaming) void selectConversation(conv.id) }}
                 onDoubleClick={() => startRenameConv(conv.id, conv.title)}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -274,23 +274,19 @@ export function ChatPanel() {
           onClick={(e) => e.stopPropagation()}
           style={ctxMenuStyle(convCtxMenu.x, convCtxMenu.y)}
         >
-          {[
-            { label: 'Rename', action: () => { const c = conversations.find((x) => x.id === convCtxMenu.convId); if (c) startRenameConv(c.id, c.title) } },
-            null,
-            { label: 'Delete', action: () => { deleteConversation(convCtxMenu.convId); setConvCtxMenu(null) }, danger: true },
-          ].map((item, i) =>
-            item === null ? (
-              <div key={i} style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
-            ) : (
-              <button
-                key={item.label}
-                onClick={() => { setConvCtxMenu(null); item.action() }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', color: item.danger ? '#f47067' : 'var(--text-1)', fontSize: 13 }}
-              >
-                {item.label}
-              </button>
-            ),
-          )}
+          <button
+            onClick={() => { const c = conversations.find((x) => x.id === convCtxMenu.convId); if (c) startRenameConv(c.id, c.title); setConvCtxMenu(null) }}
+            style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', color: 'var(--text-1)', fontSize: 13 }}
+          >
+            Rename
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />
+          <button
+            onClick={() => { deleteConversation(convCtxMenu.convId); setConvCtxMenu(null) }}
+            style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', color: '#f47067', fontSize: 13 }}
+          >
+            Delete
+          </button>
         </div>
       )}
 

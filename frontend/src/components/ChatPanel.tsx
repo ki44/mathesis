@@ -2,6 +2,7 @@
 import { useChat } from '../hooks/useChat'
 import { useChatStore } from '../store/chatStore'
 import { ChatMessageItem } from './ChatMessageItem'
+import { ctxMenuStyle } from './ctxMenuStyle'
 import { useContextMenuClose } from '../hooks/useContextMenuClose'
 import type { ChatMessage } from '../types'
 
@@ -33,10 +34,8 @@ export function ChatPanel() {
   const [renameConvValue, setRenameConvValue] = useState('')
   const convRenameInputRef = useRef<HTMLInputElement>(null)
 
-  const closeConvCtxMenu = useCallback(() => setConvCtxMenu(null), [])
-  const closeMsgCtxMenu = useCallback(() => setMsgCtxMenu(null), [])
-  useContextMenuClose(closeConvCtxMenu)
-  useContextMenuClose(closeMsgCtxMenu)
+  const closeAllMenus = useCallback(() => { setConvCtxMenu(null); setMsgCtxMenu(null) }, [])
+  useContextMenuClose(closeAllMenus)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -72,12 +71,7 @@ export function ChatPanel() {
     setRenamingConvId(null)
   }
 
-  // Find the last user-message display index for forking
-  const getDisplayMsgIndex = (msgIndex: number) => {
-    // msgIndex here is the position in the messages array; we map it to display index
-    // (display index = sequential index skipping nothing, same order as messages array)
-    return msgIndex
-  }
+  const canRerun = !isStreaming && messages.some((m) => m.role === 'user')
 
   return (
     <div
@@ -255,7 +249,7 @@ export function ChatPanel() {
             </button>
             <button
               onClick={rerunLastMessage}
-              disabled={isStreaming || !messages.some((m) => m.role === 'user')}
+              disabled={!canRerun}
               title="Rerun last message"
               style={{
                 background: 'var(--bg-3)',
@@ -264,7 +258,7 @@ export function ChatPanel() {
                 color: 'var(--text-2)',
                 padding: '0 10px',
                 height: 28,
-                cursor: isStreaming || !messages.some((m) => m.role === 'user') ? 'not-allowed' : 'pointer',
+                cursor: canRerun ? 'pointer' : 'not-allowed',
                 fontSize: 13,
                 transition: 'background 0.15s',
               }}
@@ -310,7 +304,7 @@ export function ChatPanel() {
           <button
             onClick={() => {
               setMsgCtxMenu(null)
-              forkConversation(activeConversationId, getDisplayMsgIndex(msgCtxMenu.msgIndex))
+              forkConversation(activeConversationId, msgCtxMenu.msgIndex)
             }}
             style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '5px 14px', color: 'var(--text-1)', fontSize: 13 }}
           >
@@ -335,21 +329,4 @@ const variantNavBtnStyle: React.CSSProperties = {
   justifyContent: 'center',
   fontSize: 16,
   padding: 0,
-}
-
-function ctxMenuStyle(x: number, y: number): React.CSSProperties {
-  return {
-    position: 'fixed',
-    top: y,
-    left: x,
-    background: 'var(--bg-3)',
-    border: '1px solid var(--border-2)',
-    borderRadius: 4,
-    zIndex: 1000,
-    minWidth: 150,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-    overflow: 'hidden',
-    padding: '4px 0',
-    fontSize: 13,
-  }
 }

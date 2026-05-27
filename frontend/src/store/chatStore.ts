@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import type { ChatMessage } from '../types'
 
+function findLastUserIdx(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') return i
+  }
+  return -1
+}
+
 export interface VariantRuns {
   runs: ChatMessage[][]  // each entry = assistant messages from one run
   activeIndex: number
@@ -179,26 +186,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // Captures the current assistant tail as run[0] before streaming a rerun.
   // Returns the text of the last user message so useChat can re-send it.
   startRerun: (convId) => {
-    let lastUserText = ''
+    const conv = get().conversations.find((c) => c.id === convId)
+    if (!conv) return ''
+    const lastUserIdx = findLastUserIdx(conv.messages)
+    if (lastUserIdx === -1) return ''
+    const lastUserText = conv.messages[lastUserIdx].content
+    const tail = conv.messages.slice(lastUserIdx + 1)
+    const runs = conv.variantRuns ? conv.variantRuns.runs : [tail]
     set((state) => ({
-      conversations: state.conversations.map((c) => {
-        if (c.id !== convId) return c
-        // Find the last user message index
-        let lastUserIdx = -1
-        for (let i = c.messages.length - 1; i >= 0; i--) {
-          if (c.messages[i].role === 'user') { lastUserIdx = i; break }
-        }
-        if (lastUserIdx === -1) return c
-        lastUserText = c.messages[lastUserIdx].content
-        const tail = c.messages.slice(lastUserIdx + 1)
-        const runs = c.variantRuns ? c.variantRuns.runs : [tail]
-        return {
+      conversations: state.conversations.map((c) =>
+        c.id !== convId ? c : {
           ...c,
-          // Trim messages back to user message + everything before; new assistant messages stream in
           messages: c.messages.slice(0, lastUserIdx + 1),
-          variantRuns: { runs, activeIndex: runs.length },  // next slot = runs.length
-        }
-      }),
+          variantRuns: { runs, activeIndex: runs.length },
+        },
+      ),
     }))
     return lastUserText
   },
@@ -208,10 +210,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       conversations: state.conversations.map((c) => {
         if (c.id !== convId || !c.variantRuns) return c
-        let lastUserIdx = -1
-        for (let i = c.messages.length - 1; i >= 0; i--) {
-          if (c.messages[i].role === 'user') { lastUserIdx = i; break }
-        }
+        const lastUserIdx = findLastUserIdx(c.messages)
         const tail = c.messages.slice(lastUserIdx + 1)
         const runs = [...c.variantRuns.runs]
         runs[c.variantRuns.activeIndex] = tail
@@ -226,11 +225,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const { runs, activeIndex } = c.variantRuns
         const nextIndex = activeIndex + direction
         if (nextIndex < 0 || nextIndex >= runs.length) return c
-        // Find last user message
-        let lastUserIdx = -1
-        for (let i = c.messages.length - 1; i >= 0; i--) {
-          if (c.messages[i].role === 'user') { lastUserIdx = i; break }
-        }
+        const lastUserIdx = findLastUserIdx(c.messages)
         const base = c.messages.slice(0, lastUserIdx + 1)
         return {
           ...c,

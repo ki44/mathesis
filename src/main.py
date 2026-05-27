@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from agent import Agent
 from agent_tools.storage.db import get_db, init_db
@@ -21,6 +20,7 @@ from schemas.schemas import (
     ConversationUpdateRequest,
     CopyFileRequest,
     CourseFile,
+    CreateFileRequest,
     DisplayMessage,
     FolderCreate,
     FolderEntry,
@@ -238,7 +238,13 @@ async def fork_conversation(conv_id: str, body: ForkRequest, db: aiosqlite.Conne
                     break
                 display_count += 1
         elif role == "assistant":
-            # tool_calls are emitted before the text content by _to_display_messages()
+            # Mirror _to_display_messages(): content first, then tool_calls
+            if msg.get("content"):
+                if display_count == body.message_index:
+                    slice_end = i + 1
+                    found = True
+                    break
+                display_count += 1
             for _tc in msg.get("tool_calls") or []:
                 if display_count == body.message_index:
                     slice_end = i + 1
@@ -247,12 +253,6 @@ async def fork_conversation(conv_id: str, body: ForkRequest, db: aiosqlite.Conne
                 display_count += 1
             if found:
                 break
-            if msg.get("content"):
-                if display_count == body.message_index:
-                    slice_end = i + 1
-                    found = True
-                    break
-                display_count += 1
 
     forked_history = history[:slice_end]
     new_id = str(uuid.uuid4())
@@ -281,13 +281,8 @@ async def get_courses(db: aiosqlite.Connection = Depends(get_db_session)):
     return [CourseFile.model_validate(dict(r)) for r in rows]
 
 
-class _CreateFileRequest(BaseModel):
-    filename: str
-    content: str = ""
-
-
 @app.post("/api/courses-create", response_model=CourseFile, status_code=201)
-async def create_course(body: _CreateFileRequest, db: aiosqlite.Connection = Depends(get_db_session)):
+async def create_course(body: CreateFileRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     cursor = await db.execute("SELECT 1 FROM course_files WHERE filename = ?", (body.filename,))
     if await cursor.fetchone():
         raise HTTPException(status_code=409, detail="File already exists")

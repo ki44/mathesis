@@ -84,3 +84,8 @@ class ConversationUpdateRequest(BaseModel):
 
 class ForkRequest(BaseModel):
     message_index: int = Field(..., description="0-based index of the display message to fork from (inclusive)")
+
+
+class CreateFileRequest(BaseModel):
+    filename: str
+    content: str = ""

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCourseStore } from '../store/courseStore'
 import { useContextMenuClose } from '../hooks/useContextMenuClose'
+import { ctxMenuStyle } from './ctxMenuStyle'
 
 type CtxMenu = { x: number; y: number; filename: string }
 
@@ -51,7 +52,6 @@ export function TabBar() {
   ]
 
   const startRename = (filename: string) => {
-    setCtxMenu(null)
     setRenaming(filename)
     setRenameValue(basename(filename))
   }
@@ -67,25 +67,19 @@ export function TabBar() {
   }
 
   const closeOthers = (filename: string) => {
-    setCtxMenu(null)
-    const toClose = openFiles.filter((f) => f !== filename)
-    toClose.forEach((f) => closeFile(f))
+    openFiles.filter((f) => f !== filename).forEach((f) => closeFile(f))
   }
 
   const closeToRight = (filename: string) => {
-    setCtxMenu(null)
     const idx = openFiles.indexOf(filename)
-    const toClose = openFiles.slice(idx + 1)
-    toClose.forEach((f) => closeFile(f))
+    openFiles.slice(idx + 1).forEach((f) => closeFile(f))
   }
 
   const copyPath = (filename: string) => {
-    setCtxMenu(null)
     navigator.clipboard.writeText(filename)
   }
 
   const duplicate = async (filename: string) => {
-    setCtxMenu(null)
     await copyFile(filename).catch((e) => alert(String(e)))
   }
 
@@ -198,27 +192,15 @@ export function TabBar() {
       {ctxMenu && (
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            top: ctxMenu.y,
-            left: ctxMenu.x,
-            background: 'var(--bg-3)',
-            border: '1px solid var(--border-2)',
-            borderRadius: 4,
-            padding: '4px 0',
-            zIndex: 1000,
-            minWidth: 160,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            fontSize: 13,
-          }}
+          style={ctxMenuStyle(ctxMenu.x, ctxMenu.y)}
         >
           {[
-            { label: pinnedFiles.includes(ctxMenu.filename) ? 'Unpin' : 'Pin', action: () => { setCtxMenu(null); pinnedFiles.includes(ctxMenu.filename) ? unpinFile(ctxMenu.filename) : pinFile(ctxMenu.filename) } },
+            { label: pinnedFiles.includes(ctxMenu.filename) ? 'Unpin' : 'Pin', action: () => { pinnedFiles.includes(ctxMenu.filename) ? unpinFile(ctxMenu.filename) : pinFile(ctxMenu.filename) } },
             { label: 'Rename', action: () => startRename(ctxMenu.filename) },
             { label: 'Duplicate', action: () => duplicate(ctxMenu.filename) },
             { label: 'Copy Path', action: () => copyPath(ctxMenu.filename) },
             null,
-            { label: 'Close', action: () => { setCtxMenu(null); closeFile(ctxMenu.filename) } },
+            { label: 'Close', action: () => closeFile(ctxMenu.filename) },
             { label: 'Close Others', action: () => closeOthers(ctxMenu.filename) },
             { label: 'Close to the Right', action: () => closeToRight(ctxMenu.filename) },
           ].map((item, i) =>
@@ -227,18 +209,8 @@ export function TabBar() {
             ) : (
               <button
                 key={item.label}
-                onClick={item.action}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '5px 14px',
-                  color: 'var(--text-1)',
-                  fontSize: 13,
-                }}
+                onClick={() => { setCtxMenu(null); item.action() }}
+                className="ctx-menu-item"
               >
                 {item.label}
               </button>

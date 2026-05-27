@@ -10,10 +10,11 @@ export function useChat() {
   const setIsStreaming = useChatStore((s) => s.setIsStreaming)
   const startRerun = useChatStore((s) => s.startRerun)
   const finalizeRerun = useChatStore((s) => s.finalizeRerun)
+  const clearVariantRuns = useChatStore((s) => s.clearVariantRuns)
   const fetchProposals = useCourseStore((s) => s.fetchProposals)
   const fetchFiles = useCourseStore((s) => s.fetchFiles)
 
-  const _stream = useCallback(
+  const stream = useCallback(
     async (text: string, convId: string, rerun: boolean) => {
       let asstId = addMessage(convId, { role: 'assistant', content: '' })
       let needNewAsst = false
@@ -79,9 +80,10 @@ export function useChat() {
     async (text: string) => {
       const convId = activeConversationId ?? newConversation()
       addMessage(convId, { role: 'user', content: text })
-      await _stream(text, convId, false)
+      clearVariantRuns(convId)
+      await stream(text, convId, false)
     },
-    [activeConversationId, newConversation, addMessage, _stream],
+    [activeConversationId, newConversation, addMessage, clearVariantRuns, stream],
   )
 
   const rerunLastMessage = useCallback(async () => {
@@ -89,9 +91,12 @@ export function useChat() {
     if (!convId) return
     const lastUserText = startRerun(convId)
     if (!lastUserText) return
-    await _stream(lastUserText, convId, true)
-    finalizeRerun(convId)
-  }, [activeConversationId, startRerun, finalizeRerun, _stream])
+    try {
+      await stream(lastUserText, convId, true)
+    } finally {
+      finalizeRerun(convId)
+    }
+  }, [activeConversationId, startRerun, finalizeRerun, stream])
 
   return { sendMessage, rerunLastMessage }
 }

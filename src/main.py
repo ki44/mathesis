@@ -87,6 +87,28 @@ def _to_display_messages(llm_history: list[dict]) -> list[dict]:
     return result
 
 
+def _find_history_slice_end(history: list[dict], display_index: int) -> int:
+    """Return exclusive end index into history for the given 0-based display message index."""
+    count = 0
+    for i, msg in enumerate(history):
+        role = msg.get("role")
+        if role == "user":
+            if isinstance(msg.get("content"), str):
+                if count == display_index:
+                    return i + 1
+                count += 1
+        elif role == "assistant":
+            if msg.get("content"):
+                if count == display_index:
+                    return i + 1
+                count += 1
+            for _ in msg.get("tool_calls") or []:
+                if count == display_index:
+                    return i + 1
+                count += 1
+    return len(history)
+
+
 async def _fetchone_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> aiosqlite.Row:
     cursor = await db.execute(query, params)
     row = await cursor.fetchone()
@@ -220,41 +242,7 @@ async def fork_conversation(conv_id: str, body: ForkRequest, db: aiosqlite.Conne
         db, "SELECT llm_history FROM conversations WHERE id = ?", (conv_id,), "Conversation not found"
     )
     history: list[dict] = json.loads(row["llm_history"])
-
-    # Map display message index → slice of llm_history
-    display_count = 0
-    # Walk history in the same order _to_display_messages() emits items so the
-    # frontend's messages[] index maps 1-to-1 to display_count here.
-    slice_end = len(history)
-    found = False
-    for i, msg in enumerate(history):
-        role = msg.get("role")
-        if role == "user":
-            content = msg.get("content")
-            if isinstance(content, str):
-                if display_count == body.message_index:
-                    slice_end = i + 1
-                    found = True
-                    break
-                display_count += 1
-        elif role == "assistant":
-            # Mirror _to_display_messages(): content first, then tool_calls
-            if msg.get("content"):
-                if display_count == body.message_index:
-                    slice_end = i + 1
-                    found = True
-                    break
-                display_count += 1
-            for _tc in msg.get("tool_calls") or []:
-                if display_count == body.message_index:
-                    slice_end = i + 1
-                    found = True
-                    break
-                display_count += 1
-            if found:
-                break
-
-    forked_history = history[:slice_end]
+    forked_history = history[: _find_history_slice_end(history, body.message_index)]
     new_id = str(uuid.uuid4())
     c = next((m.get("content", "") for m in forked_history if m.get("role") == "user"), "")
     title = ("Fork: " + c[:35] + ("..." if len(c) > 35 else "")) if c else "Forked conversation"
@@ -281,7 +269,7 @@ async def get_courses(db: aiosqlite.Connection = Depends(get_db_session)):
     return [CourseFile.model_validate(dict(r)) for r in rows]
 
 
-@app.post("/api/courses-create", response_model=CourseFile, status_code=201)
+@app.post("/api/courses", response_model=CourseFile, status_code=201)
 async def create_course(body: CreateFileRequest, db: aiosqlite.Connection = Depends(get_db_session)):
     cursor = await db.execute("SELECT 1 FROM course_files WHERE filename = ?", (body.filename,))
     if await cursor.fetchone():
@@ -433,7 +421,7 @@ async def create_folder(body: FolderCreate, db: aiosqlite.Connection = Depends(g
     try:
         await db.execute("INSERT INTO folders (path) VALUES (?)", (body.path,))
         await db.commit()
-    except Exception:
+    except aiosqlite.IntegrityError:
         raise HTTPException(status_code=409, detail="Folder already exists")
     cursor = await db.execute("SELECT path, created_at FROM folders WHERE path = ?", (body.path,))
     return FolderEntry.model_validate(dict(await cursor.fetchone()))

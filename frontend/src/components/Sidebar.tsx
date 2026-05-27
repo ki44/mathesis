@@ -1,7 +1,8 @@
-﻿import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCourseStore } from '../store/courseStore'
 import { useContextMenuClose } from '../hooks/useContextMenuClose'
 import { useThemeStore } from '../store/themeStore'
+import { ctxMenuStyle } from './ctxMenuStyle'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,41 +16,41 @@ interface TreeNode {
 type CtxMenu = { x: number; y: number; node: TreeNode }
 type Creating = { parentPath: string | null; kind: 'file' | 'folder' } | null
 
-// ─── Context ──────────────────────────────────────────────────────────────────
+// ─── Tree prop types ─────────────────────────────────────────────────────────
 
-interface SidebarCtx {
+interface TreeState {
   collapsedFolders: Set<string>
-  toggleFolder: (path: string) => void
   activeFilename: string | null
-  setActiveFilename: (f: string | null) => void
   focusedPath: string | null
-  setFocusedPath: (p: string | null) => void
   ctxMenuPath: string | null
-  setCtxMenu: (m: CtxMenu | null) => void
   renamingPath: string | null
   renameValue: string
-  setRenameValue: (v: string) => void
-  renameInputRef: React.RefObject<HTMLInputElement | null>
-  commitRename: () => void
-  setRenamingPath: (p: string | null) => void
   proposals: Record<string, unknown>
   clipboard: { type: string; kind: string; path: string } | null
   dragPath: string | null
   dragOverPath: string | null
+  creating: Creating
+  createValue: string
+}
+
+interface TreeHandlers {
+  toggleFolder: (path: string) => void
+  setFocusedPath: (p: string | null) => void
+  setCtxMenu: (m: CtxMenu | null) => void
+  setActiveFilename: (f: string | null) => void
+  setRenameValue: (v: string) => void
+  renameInputRef: React.RefObject<HTMLInputElement | null>
+  commitRename: () => void
+  setRenamingPath: (p: string | null) => void
   handleDragStart: (e: React.DragEvent, path: string) => void
   handleDragOver: (e: React.DragEvent, node: TreeNode) => void
   handleDrop: (e: React.DragEvent, node: TreeNode) => void
   handleDragEnd: () => void
-  creating: Creating
-  createValue: string
   setCreateValue: (v: string) => void
   createInputRef: React.RefObject<HTMLInputElement | null>
   commitCreate: () => void
   cancelCreate: () => void
 }
-
-const SidebarContext = createContext<SidebarCtx | null>(null)
-const useSidebarCtx = () => useContext(SidebarContext)!
 
 // ─── Tree builder ─────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ export function Sidebar() {
       try {
         if (isFolder) await renameFolder(node, newPath)
         else await renameFile(node, newPath)
-      } catch {}
+      } catch (err) { console.error(err) }
     }
     setRenamingPath(null)
   }
@@ -288,7 +289,7 @@ export function Sidebar() {
     try {
       if (creating.kind === 'folder') await createFolder(path)
       else await createFile(path)
-    } catch {}
+    } catch (err) { console.error(err) }
     setCreating(null)
   }
 
@@ -369,21 +370,29 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', handler)
   }, [focusedPath, tree, clipboard, undoStack]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ctx: SidebarCtx = {
-    collapsedFolders, toggleFolder,
-    activeFilename, setActiveFilename,
-    focusedPath, setFocusedPath,
+  const state: TreeState = {
+    collapsedFolders,
+    activeFilename,
+    focusedPath,
     ctxMenuPath: ctxMenu?.node.path ?? null,
-    setCtxMenu,
-    renamingPath, renameValue, setRenameValue, renameInputRef, commitRename, setRenamingPath,
+    renamingPath, renameValue,
     proposals, clipboard,
-    dragPath, dragOverPath, handleDragStart, handleDragOver, handleDrop, handleDragEnd,
-    creating, createValue, setCreateValue, createInputRef, commitCreate, cancelCreate,
+    dragPath, dragOverPath,
+    creating, createValue,
+  }
+
+  const handlers: TreeHandlers = {
+    toggleFolder,
+    setFocusedPath,
+    setCtxMenu,
+    setActiveFilename,
+    setRenameValue, renameInputRef, commitRename, setRenamingPath,
+    handleDragStart, handleDragOver, handleDrop, handleDragEnd,
+    setCreateValue, createInputRef, commitCreate, cancelCreate,
   }
 
   return (
-    <SidebarContext.Provider value={ctx}>
-      <div style={{ width: '100%', background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ width: '100%', background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 12, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <span>Courses</span>
@@ -417,8 +426,8 @@ export function Sidebar() {
           {tree.length === 0 && !creating && (
             <p style={{ color: 'var(--text-3)', fontSize: 12, padding: '12px 14px' }}>No courses yet</p>
           )}
-          {tree.map((node) => <TreeNodeView key={node.path} node={node} depth={0} />)}
-          {creating?.parentPath === null && <CreateRow depth={0} />}
+          {tree.map((node) => <TreeNodeView key={node.path} node={node} depth={0} state={state} handlers={handlers} />)}
+          {creating?.parentPath === null && <CreateRow depth={0} state={state} handlers={handlers} />}
           <div
             style={{ flexGrow: 1, minHeight: 60 }}
             onContextMenu={(e) => {
@@ -453,14 +462,14 @@ export function Sidebar() {
           />
         )}
       </div>
-    </SidebarContext.Provider>
   )
 }
 
 // ─── CreateRow ────────────────────────────────────────────────────────────────
 
-function CreateRow({ depth }: { depth: number }) {
-  const { creating, createValue, setCreateValue, createInputRef, commitCreate, cancelCreate } = useSidebarCtx()
+function CreateRow({ depth, state, handlers }: { depth: number; state: TreeState; handlers: TreeHandlers }) {
+  const { creating, createValue } = state
+  const { setCreateValue, createInputRef, commitCreate, cancelCreate } = handlers
   if (!creating) return null
   const indent = depth * 8 + 4 + 16 + 3  // base + arrow/icon col + gap
   return (
@@ -484,14 +493,16 @@ function CreateRow({ depth }: { depth: number }) {
 
 // ─── TreeNodeView ─────────────────────────────────────────────────────────────
 
-function TreeNodeView({ node, depth }: { node: TreeNode; depth: number }) {
+function TreeNodeView({ node, depth, state, handlers }: { node: TreeNode; depth: number; state: TreeState; handlers: TreeHandlers }) {
   const {
-    collapsedFolders, toggleFolder, activeFilename, focusedPath, setFocusedPath,
-    ctxMenuPath, setCtxMenu, setActiveFilename, renamingPath, renameValue, setRenameValue,
-    renameInputRef, commitRename, setRenamingPath, proposals, clipboard,
-    dragPath, dragOverPath, handleDragStart, handleDragOver, handleDrop, handleDragEnd,
-    creating,
-  } = useSidebarCtx()
+    collapsedFolders, activeFilename, focusedPath, ctxMenuPath, renamingPath, renameValue,
+    proposals, clipboard, dragPath, dragOverPath, creating,
+  } = state
+  const {
+    toggleFolder, setFocusedPath, setCtxMenu, setActiveFilename, setRenameValue,
+    renameInputRef, commitRename, setRenamingPath, handleDragStart, handleDragOver,
+    handleDrop, handleDragEnd,
+  } = handlers
 
   const indent = depth * 8 + 4
   const isCollapsed = collapsedFolders.has(node.path)
@@ -581,8 +592,8 @@ function TreeNodeView({ node, depth }: { node: TreeNode; depth: number }) {
 
       {node.kind === 'folder' && !isCollapsed && (
         <>
-          {node.children?.map((child) => <TreeNodeView key={child.path} node={child} depth={depth + 1} />)}
-          {creating?.parentPath === node.path && <CreateRow depth={depth + 1} />}
+          {node.children?.map((child) => <TreeNodeView key={child.path} node={child} depth={depth + 1} state={state} handlers={handlers} />)}
+          {creating?.parentPath === node.path && <CreateRow depth={depth + 1} state={state} handlers={handlers} />}
         </>
       )}
     </>
@@ -627,19 +638,7 @@ function ContextMenu({ menu, clipboard, onClose, onNewFile, onNewFolder, onRenam
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      style={{
-        position: 'fixed',
-        top: menu.y,
-        left: menu.x,
-        background: 'var(--bg-3)',
-        border: '1px solid var(--border-2)',
-        borderRadius: 4,
-        padding: '4px 0',
-        zIndex: 1000,
-        minWidth: 160,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-        fontSize: 13,
-      }}
+      style={ctxMenuStyle(menu.x, menu.y)}
     >
       {items.map((item, i) =>
         item === null ? (

@@ -16,6 +16,7 @@ export function TabBar() {
   const proposals = useCourseStore((s) => s.proposals)
   const setActiveFilename = useCourseStore((s) => s.setActiveFilename)
   const closeFile = useCourseStore((s) => s.closeFile)
+  const closeMultiple = useCourseStore((s) => s.closeMultiple)
   const pinFile = useCourseStore((s) => s.pinFile)
   const unpinFile = useCourseStore((s) => s.unpinFile)
   const renameFile = useCourseStore((s) => s.renameFile)
@@ -61,18 +62,18 @@ export function TabBar() {
     const dir = renaming.includes('/') ? renaming.slice(0, renaming.lastIndexOf('/') + 1) : ''
     const newFilename = dir + renameValue.trim()
     if (newFilename !== renaming) {
-      await renameFile(renaming, newFilename).catch((e) => alert(String(e)))
+      await renameFile(renaming, newFilename).catch((e) => console.error(e))
     }
     setRenaming(null)
   }
 
   const closeOthers = (filename: string) => {
-    openFiles.filter((f) => f !== filename).forEach((f) => closeFile(f))
+    closeMultiple(openFiles.filter((f) => f !== filename))
   }
 
   const closeToRight = (filename: string) => {
     const idx = openFiles.indexOf(filename)
-    openFiles.slice(idx + 1).forEach((f) => closeFile(f))
+    closeMultiple(openFiles.slice(idx + 1))
   }
 
   const copyPath = (filename: string) => {
@@ -80,7 +81,7 @@ export function TabBar() {
   }
 
   const duplicate = async (filename: string) => {
-    await copyFile(filename).catch((e) => alert(String(e)))
+    await copyFile(filename).catch((e) => console.error(e))
   }
 
   if (tabs.length === 0) return null

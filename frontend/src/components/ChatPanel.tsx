@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '../hooks/useChat'
 import { useChatStore } from '../store/chatStore'
 import { ChatMessageItem } from './ChatMessageItem'

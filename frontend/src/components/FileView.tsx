@@ -24,6 +24,8 @@ const BTN_BASE_STYLE: React.CSSProperties = {
 }
 
 const WIDGET_BTN_BASE = 'border-radius:4px;padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;'
+const ACCEPT_ACTIVE = '#16a34a', ACCEPT_BG = 'rgba(22,163,74,0.1)', ACCEPT_BORDER = 'rgba(22,163,74,0.5)', ACCEPT_TEXT = '#4ade80'
+const REJECT_ACTIVE = '#dc2626', REJECT_BG = 'rgba(220,38,38,0.1)', REJECT_BORDER = 'rgba(220,38,38,0.5)', REJECT_TEXT = '#f87171'
 
 // ─── Pure utility ─────────────────────────────────────────────────────────────
 
@@ -84,9 +86,9 @@ function buildAnnotatedContent(content: string, hunks: ILineChange[], side: 'ori
 
 function hunkDecisionStyle(type: 'accept' | 'reject', accepted: boolean | null): React.CSSProperties {
   if (type === 'accept') {
-    return { ...BTN_BASE_STYLE, background: accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)', border: `1px solid ${accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'}`, color: accepted === true ? '#fff' : '#4ade80', padding: '2px 10px', fontSize: 11 }
+    return { ...BTN_BASE_STYLE, background: accepted === true ? ACCEPT_ACTIVE : ACCEPT_BG, border: `1px solid ${accepted === true ? ACCEPT_ACTIVE : ACCEPT_BORDER}`, color: accepted === true ? '#fff' : ACCEPT_TEXT, padding: '2px 10px', fontSize: 11 }
   }
-  return { ...BTN_BASE_STYLE, background: accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)', border: `1px solid ${accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'}`, color: accepted === false ? '#fff' : '#f87171', padding: '2px 10px', fontSize: 11 }
+  return { ...BTN_BASE_STYLE, background: accepted === false ? REJECT_ACTIVE : REJECT_BG, border: `1px solid ${accepted === false ? REJECT_ACTIVE : REJECT_BORDER}`, color: accepted === false ? '#fff' : REJECT_TEXT, padding: '2px 10px', fontSize: 11 }
 }
 
 function InlineCalloutContainer({ title, calloutType, permanent, inner, side, open, onToggle, decisions, setDecisions }: {
@@ -102,6 +104,8 @@ function InlineCalloutContainer({ title, calloutType, permanent, inner, side, op
 }) {
   const theme = calloutTheme(calloutType)
   const isOpen = permanent || open
+  const decide = (idx: number, v: boolean) =>
+    setDecisions(prev => prev.map((d, k) => k === idx ? { ...d, accepted: v } : d))
   return (
     <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
       <div onClick={permanent ? undefined : onToggle} style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: permanent ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}>
@@ -124,8 +128,8 @@ function InlineCalloutContainer({ title, calloutType, permanent, inner, side, op
             return (
               <div key={idx} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -8, paddingRight: 140 }}>
                 <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
-                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
-                  <button onClick={() => setDecisions(prev => prev.map((d, k) => k === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
+                  <button onClick={() => decide(hunkIdx, true)} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
+                  <button onClick={() => decide(hunkIdx, false)} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
                 </div>
                 <MarkdownRenderer content={seg.text} compact />
               </div>
@@ -146,9 +150,8 @@ function computeMergedContent(
   const originalLines = originalContent.split('\n')
   const modifiedLines = modifiedContent.split('\n')
 
-  const acceptedHunks = decs
-    .filter((d) => d.accepted === true)
-    .map((d) => hunks[d.hunkIndex])
+  const acceptedHunks = hunks
+    .filter((_, i) => decs[i]?.accepted === true)
     .sort((a, b) => b.originalStartLineNumber - a.originalStartLineNumber)
 
   const result = [...originalLines]
@@ -178,12 +181,14 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
   const [isDirty, setIsDirty] = useState(false)
   const currentValueRef = useRef<string>('')
   const savedContentRef = useRef<string>('')
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const revision = fileRevisions[activeFilename ?? ''] ?? 0
 
   useEffect(() => {
+    clearTimeout(debounceTimerRef.current ?? undefined)
     setIsDirty(false)
     const content = activeFile?.content ?? ''
     currentValueRef.current = content
@@ -216,6 +221,10 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
       () => { void saveRef.current() },
     )
+    editor.onDidBlurEditorText(() => {
+      clearTimeout(debounceTimerRef.current ?? undefined)
+      void saveRef.current()
+    })
     editor.onKeyDown((e) => {
       const sel = editor.getSelection()
       const model = editor.getModel()
@@ -305,6 +314,8 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
               if (value !== undefined) {
                 currentValueRef.current = value
                 setIsDirty(value !== savedContentRef.current)
+                clearTimeout(debounceTimerRef.current ?? undefined)
+                debounceTimerRef.current = setTimeout(() => void saveRef.current(), 2000)
               }
             }}
             options={{
@@ -341,35 +352,54 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
   const [decisions, setDecisions] = useState<HunkDecision[]>([])
   const [openCallouts, setOpenCallouts] = useState<Record<number, boolean>>({})
   const [isApplying, setIsApplying] = useState(false)
+  const [modifiedContent, setModifiedContent] = useState('')
   const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const proposal = activeFilename ? proposals[activeFilename] : undefined
 
-  // Reset hunk state when proposal changes
+  // Reset hunk state and live content when proposal changes
   useEffect(() => {
     initializedRef.current = false
     setHunks([])
     setDecisions([])
     setOpenCallouts({})
-  }, [activeFilename, proposal?.proposed_content])
+    setModifiedContent(proposal?.proposed_content ?? '')
+  }, [activeFilename, proposal?.proposed_content]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function decide(idx: number, v: boolean) {
+    setDecisions(prev => prev.map((d, i) => i === idx ? { ...d, accepted: v } : d))
+  }
 
   const handleMount = useCallback((editor: IDiffEditor) => {
     editorRef.current = editor
 
-    const initHunks = () => {
-      if (initializedRef.current) return
+    // syncHunks is called on every diff update. It keeps hunks in sync with Monaco's live
+    // diff output. decisions is only reset on the first successful init (per proposal).
+    const syncHunks = () => {
       const changes = editor.getLineChanges()
-      if (changes && changes.length > 0) {
-        initializedRef.current = true
-        setHunks(changes)
-        setDecisions(changes.map((_, i) => ({ hunkIndex: i, accepted: null })))
+      if (changes === null) {
+        // Monaco hasn't computed the diff yet — retry
+        setTimeout(syncHunks, 100)
+        return
       }
+      if (!initializedRef.current) {
+        if (changes.length === 0) {
+          // Diff is empty — nothing to initialize yet, wait for onDidUpdateDiff to retry
+          return
+        }
+        initializedRef.current = true
+        setDecisions(changes.map(() => ({ accepted: null })))
+      }
+      setHunks(changes)
     }
 
-    editor.onDidUpdateDiff(initHunks)
-    // Fallback: onDidUpdateDiff can fire before Monaco populates getLineChanges()
-    setTimeout(initHunks, 300)
+    editor.onDidUpdateDiff(syncHunks)
+    setTimeout(syncHunks, 300)
+
+    // Keep modifiedContent in sync with manual edits in the diff editor
+    const modEditor = editor.getModifiedEditor()
+    modEditor.onDidChangeModelContent(() => setModifiedContent(modEditor.getValue()))
   }, [])
 
   // Create per-hunk accept/reject widgets when hunks are initialised
@@ -396,15 +426,13 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
 
         const acceptBtn = document.createElement('button')
         acceptBtn.textContent = 'Accept'
-        acceptBtn.style.cssText = `${WIDGET_BTN_BASE}background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.5);color:#4ade80;`
-        acceptBtn.onclick = () =>
-          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: true } : d)))
+        acceptBtn.style.cssText = `${WIDGET_BTN_BASE}background:${ACCEPT_BG};border:1px solid ${ACCEPT_BORDER};color:${ACCEPT_TEXT};`
+        acceptBtn.onclick = () => decide(i, true)
 
         const rejectBtn = document.createElement('button')
         rejectBtn.textContent = 'Reject'
-        rejectBtn.style.cssText = `${WIDGET_BTN_BASE}background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.5);color:#f87171;`
-        rejectBtn.onclick = () =>
-          setDecisions((prev) => prev.map((d, idx) => (idx === i ? { ...d, accepted: false } : d)))
+        rejectBtn.style.cssText = `${WIDGET_BTN_BASE}background:${REJECT_BG};border:1px solid ${REJECT_BORDER};color:${REJECT_TEXT};`
+        rejectBtn.onclick = () => decide(i, false)
 
         container.appendChild(acceptBtn)
         container.appendChild(rejectBtn)
@@ -431,34 +459,33 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
     decisions.forEach((dec, i) => {
       const btns = btnRefsRef.current[i]
       if (!btns) return
-      btns.accept.style.background = dec.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.1)'
-      btns.accept.style.borderColor = dec.accepted === true ? '#16a34a' : 'rgba(22,163,74,0.5)'
-      btns.accept.style.color = dec.accepted === true ? '#fff' : '#4ade80'
-      btns.reject.style.background = dec.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.1)'
-      btns.reject.style.borderColor = dec.accepted === false ? '#dc2626' : 'rgba(220,38,38,0.5)'
-      btns.reject.style.color = dec.accepted === false ? '#fff' : '#f87171'
+      btns.accept.style.background = dec.accepted === true ? ACCEPT_ACTIVE : ACCEPT_BG
+      btns.accept.style.borderColor = dec.accepted === true ? ACCEPT_ACTIVE : ACCEPT_BORDER
+      btns.accept.style.color = dec.accepted === true ? '#fff' : ACCEPT_TEXT
+      btns.reject.style.background = dec.accepted === false ? REJECT_ACTIVE : REJECT_BG
+      btns.reject.style.borderColor = dec.accepted === false ? REJECT_ACTIVE : REJECT_BORDER
+      btns.reject.style.color = dec.accepted === false ? '#fff' : REJECT_TEXT
     })
   }, [decisions])
 
-  async function handleApply(decs: HunkDecision[]) {
-    if (!activeFilename || !activeFile || !proposal) return
+  async function applyContent(content: string) {
+    if (!activeFilename) return
     setIsApplying(true)
-    try {
-      await applyChanges(activeFilename, computeMergedContent(decs, hunks, activeFile.content, proposal.proposed_content))
-    } finally {
-      setIsApplying(false)
-    }
+    try { await applyChanges(activeFilename, content) }
+    finally { setIsApplying(false) }
+  }
+
+  async function handleApply(decs: HunkDecision[]) {
+    if (!activeFile) return
+    await applyContent(computeMergedContent(decs, hunks, activeFile.content, modifiedContent))
   }
 
   async function handleAcceptAll() {
     if (hunks.length > 0) {
-      await handleApply(hunks.map((_, i) => ({ hunkIndex: i, accepted: true as const })))
+      await handleApply(hunks.map(() => ({ accepted: true as const })))
     } else {
       // Fallback: Monaco hasn't computed hunks yet (race), apply full proposal
-      if (!activeFilename || !proposal) return
-      setIsApplying(true)
-      try { await applyChanges(activeFilename, proposal.proposed_content) }
-      finally { setIsApplying(false) }
+      await applyContent(modifiedContent)
     }
   }
 
@@ -467,6 +494,46 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
     syncingScroll.current = true
     to.scrollTop = from.scrollTop
     syncingScroll.current = false
+  }
+
+  function renderPane(
+    content: string,
+    side: 'original' | 'modified',
+    scrollRef: React.MutableRefObject<HTMLDivElement | null>,
+    peerRef: React.MutableRefObject<HTMLDivElement | null>,
+  ) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div ref={scrollRef} onScroll={() => syncScroll(scrollRef.current, peerRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
+          <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            {buildAnnotatedContent(content, hunks, side).map((seg, i) => {
+              if (seg.kind === 'callout') {
+                const open = openCallouts[i] ?? (seg.inner.some(s => s.hunkIndex !== null) || seg.defaultOpen)
+                return <InlineCalloutContainer key={i} title={seg.title} calloutType={seg.calloutType} permanent={seg.permanent} inner={seg.inner} side={side} open={open} onToggle={() => setOpenCallouts(prev => ({ ...prev, [i]: !open }))} decisions={decisions} setDecisions={setDecisions} />
+              }
+              if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
+              if (side === 'original') {
+                return (
+                  <div key={i} style={{ background: 'rgba(220,38,38,0.10)', borderLeft: '3px solid rgba(200,60,60,0.55)', paddingLeft: 8, marginLeft: -11 }}>
+                    <MarkdownRenderer content={seg.text} compact />
+                  </div>
+                )
+              }
+              const hunkIdx = seg.hunkIndex
+              return (
+                <div key={i} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -11, paddingRight: 140 }}>
+                  <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button onClick={() => decide(hunkIdx, true)} style={hunkDecisionStyle('accept', decisions[hunkIdx]?.accepted ?? null)}>Accept</button>
+                    <button onClick={() => decide(hunkIdx, false)} style={hunkDecisionStyle('reject', decisions[hunkIdx]?.accepted ?? null)}>Reject</button>
+                  </div>
+                  <MarkdownRenderer content={seg.text} compact />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (!activeFile || !proposal) return null
@@ -486,7 +553,7 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
           background: 'var(--bg-2)',
         }}
       >
-        <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1 }}>{activeFile.filename}</span>
+        <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1 }}>{proposal.description}</span>
         {allDecided && (
           <button onClick={() => handleApply(decisions)} disabled={isApplying} style={{ ...BTN_BASE_STYLE, background: isApplying ? 'rgba(255,255,255,0.08)' : '#2563eb' }}>
             {isApplying ? '...' : 'Apply selection'}
@@ -502,24 +569,11 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
           onClick={() => setIsPreview((v) => !v)}
           style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
         >
-          {isPreview ? 'Code' : 'Preview'}
+          {isPreview ? 'Edit' : 'Preview'}
         </button>
       </div>
 
-      {/* Description */}
-      {proposal.description && (
-        <div
-          style={{
-            padding: '6px 16px',
-            background: 'var(--bg-info)',
-            borderBottom: '1px solid var(--border)',
-            fontSize: 12,
-            color: 'var(--text-info)',
-          }}
-        >
-          {proposal.description}
-        </div>
-      )}
+
 
       {/* Content area — Monaco always mounted; preview panels overlay it when active */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -546,48 +600,9 @@ function DiffReview({ isPreview, setIsPreview }: { isPreview: boolean; setIsPrev
         {/* Preview panels overlay — z-index:101 sits above Monaco's view zone buttons (z-index:100) */}
         {isPreview && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 101, display: 'flex', overflow: 'hidden', background: 'var(--bg-1)' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={leftScrollRef} onScroll={() => syncScroll(leftScrollRef.current, rightScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
-                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-                  {buildAnnotatedContent(activeFile.content, hunks, 'original').map((seg, i) => {
-                    if (seg.kind === 'callout') {
-                      const open = openCallouts[i] ?? (seg.inner.some(s => s.hunkIndex !== null) || seg.defaultOpen)
-                      return <InlineCalloutContainer key={i} title={seg.title} calloutType={seg.calloutType} permanent={seg.permanent} inner={seg.inner} side="original" open={open} onToggle={() => setOpenCallouts(prev => ({ ...prev, [i]: !open }))} decisions={decisions} setDecisions={setDecisions} />
-                    }
-                    if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
-                    return (
-                      <div key={i} style={{ background: 'rgba(220,38,38,0.10)', borderLeft: '3px solid rgba(200,60,60,0.55)', paddingLeft: 8, marginLeft: -11 }}>
-                        <MarkdownRenderer content={seg.text} compact />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
+            {renderPane(activeFile.content, 'original', leftScrollRef, rightScrollRef)}
             <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div ref={rightScrollRef} onScroll={() => syncScroll(rightScrollRef.current, leftScrollRef.current)} style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
-                <div style={{ padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-                  {buildAnnotatedContent(proposal.proposed_content, hunks, 'modified').map((seg, i) => {
-                    if (seg.kind === 'callout') {
-                      const open = openCallouts[i] ?? (seg.inner.some(s => s.hunkIndex !== null) || seg.defaultOpen)
-                      return <InlineCalloutContainer key={i} title={seg.title} calloutType={seg.calloutType} permanent={seg.permanent} inner={seg.inner} side="modified" open={open} onToggle={() => setOpenCallouts(prev => ({ ...prev, [i]: !open }))} decisions={decisions} setDecisions={setDecisions} />
-                    }
-                    if (seg.hunkIndex === null) return <div key={i}><MarkdownRenderer content={seg.text} compact /></div>
-                    const hunkIdx = seg.hunkIndex
-                    const dec = decisions[hunkIdx]
-                    const acceptBtn = <button key="a" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: true } : d))} style={hunkDecisionStyle('accept', dec?.accepted ?? null)}>Accept</button>
-                    const rejectBtn = <button key="r" onClick={() => setDecisions(prev => prev.map((d, idx) => idx === hunkIdx ? { ...d, accepted: false } : d))} style={hunkDecisionStyle('reject', dec?.accepted ?? null)}>Reject</button>
-                    return (
-                      <div key={i} style={{ position: 'relative', background: 'rgba(34,197,94,0.10)', borderLeft: '3px solid rgba(34,197,94,0.55)', paddingLeft: 8, marginLeft: -11, paddingRight: 140 }}>
-                        <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', alignItems: 'center', gap: 4 }}>{acceptBtn}{rejectBtn}</div>
-                        <MarkdownRenderer content={seg.text} compact />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
+            {renderPane(modifiedContent, 'modified', rightScrollRef, leftScrollRef)}
           </div>
         )}
       </div>

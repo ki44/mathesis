@@ -23,7 +23,6 @@ export interface ChatMessage {
 }
 
 export interface HunkDecision {
-  hunkIndex: number
   accepted: boolean | null
 }
 

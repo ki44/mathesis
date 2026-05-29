@@ -1,10 +1,23 @@
 import { create } from 'zustand'
 import type { ChatMessage } from '../types'
 
+function findLastUserIdx(messages: ChatMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') return i
+  }
+  return -1
+}
+
+export interface VariantRuns {
+  runs: ChatMessage[][]  // each entry = assistant messages from one run
+  activeIndex: number
+}
+
 export interface Conversation {
   id: string
   title: string
   messages: ChatMessage[]
+  variantRuns: VariantRuns | null  // set when the last user message has been rerun
   messagesLoaded: boolean
 }
 
@@ -17,9 +30,15 @@ interface ChatState {
   newConversation: () => string
   selectConversation: (id: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
+  renameConversation: (id: string, title: string) => Promise<void>
+  forkConversation: (convId: string, msgIndex: number) => Promise<void>
   addMessage: (convId: string, msg: Omit<ChatMessage, 'id'>) => string
   appendDelta: (convId: string, msgId: string, delta: string) => void
   setIsStreaming: (value: boolean) => void
+  startRerun: (convId: string) => string  // saves current tail as run[0], returns last user msg text
+  finalizeRerun: (convId: string) => void  // called after streaming; moves new tail into runs
+  navigateVariant: (convId: string, direction: 1 | -1) => void
+  clearVariantRuns: (convId: string) => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -35,6 +54,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       id: s.id,
       title: s.title,
       messages: [],
+      variantRuns: null,
       messagesLoaded: false,
     }))
     const firstId = conversations[0]?.id ?? null
@@ -46,7 +66,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newConversation: () => {
     const id = crypto.randomUUID()
-    const conv: Conversation = { id, title: 'New conversation', messages: [], messagesLoaded: true }
+    const conv: Conversation = { id, title: 'New conversation', messages: [], variantRuns: null, messagesLoaded: true }
     set((state) => ({
       conversations: [conv, ...state.conversations],
       activeConversationId: id,
@@ -68,6 +88,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           : {
               ...c,
               messagesLoaded: true,
+              variantRuns: null,
               messages: msgs.map((m) => ({
                 id: crypto.randomUUID(),
                 role: m.role as ChatMessage['role'],
@@ -123,5 +144,100 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })),
 
   setIsStreaming: (value) => set({ isStreaming: value }),
+
+  renameConversation: async (id, title) => {
+    // Optimistic update
+    set((state) => ({
+      conversations: state.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
+    }))
+    const res = await fetch(`/api/conversations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    if (!res.ok) {
+      // Revert on failure — refetch
+      await get().fetchConversations()
+    }
+  },
+
+  forkConversation: async (convId, msgIndex) => {
+    const res = await fetch(`/api/conversations/${convId}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_index: msgIndex }),
+    })
+    if (!res.ok) return
+    const summary = await res.json() as { id: string; title: string; created_at: string; updated_at: string }
+    const newConv: Conversation = {
+      id: summary.id,
+      title: summary.title,
+      messages: [],
+      variantRuns: null,
+      messagesLoaded: false,
+    }
+    set((state) => ({
+      conversations: [newConv, ...state.conversations],
+      activeConversationId: newConv.id,
+    }))
+    await get().selectConversation(newConv.id)
+  },
+
+  // Captures the current assistant tail as run[0] before streaming a rerun.
+  // Returns the text of the last user message so useChat can re-send it.
+  startRerun: (convId) => {
+    const conv = get().conversations.find((c) => c.id === convId)
+    if (!conv) return ''
+    const lastUserIdx = findLastUserIdx(conv.messages)
+    if (lastUserIdx === -1) return ''
+    const lastUserText = conv.messages[lastUserIdx].content
+    const tail = conv.messages.slice(lastUserIdx + 1)
+    const runs = conv.variantRuns ? conv.variantRuns.runs : [tail]
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.id !== convId ? c : {
+          ...c,
+          messages: c.messages.slice(0, lastUserIdx + 1),
+          variantRuns: { runs, activeIndex: runs.length },
+        },
+      ),
+    }))
+    return lastUserText
+  },
+
+  // Called after streaming completes; saves the newly streamed messages as the latest run.
+  finalizeRerun: (convId) =>
+    set((state) => ({
+      conversations: state.conversations.map((c) => {
+        if (c.id !== convId || !c.variantRuns) return c
+        const lastUserIdx = findLastUserIdx(c.messages)
+        const tail = c.messages.slice(lastUserIdx + 1)
+        const runs = [...c.variantRuns.runs]
+        runs[c.variantRuns.activeIndex] = tail
+        return { ...c, variantRuns: { runs, activeIndex: c.variantRuns.activeIndex } }
+      }),
+    })),
+
+  navigateVariant: (convId, direction) =>
+    set((state) => ({
+      conversations: state.conversations.map((c) => {
+        if (c.id !== convId || !c.variantRuns) return c
+        const { runs, activeIndex } = c.variantRuns
+        const nextIndex = activeIndex + direction
+        if (nextIndex < 0 || nextIndex >= runs.length) return c
+        const lastUserIdx = findLastUserIdx(c.messages)
+        const base = c.messages.slice(0, lastUserIdx + 1)
+        return {
+          ...c,
+          messages: [...base, ...runs[nextIndex]],
+          variantRuns: { runs, activeIndex: nextIndex },
+        }
+      }),
+    })),
+
+  clearVariantRuns: (convId) =>
+    set((state) => ({
+      conversations: state.conversations.map((c) => (c.id === convId ? { ...c, variantRuns: null } : c)),
+    })),
 }))
 

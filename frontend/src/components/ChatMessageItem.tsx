@@ -3,15 +3,21 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 
 interface Props {
   message: ChatMessage
+  onContextMenu?: (e: React.MouseEvent) => void
+  highlighted?: boolean
 }
 
-export function ChatMessageItem({ message }: Props) {
+export function ChatMessageItem({ message, onContextMenu, highlighted }: Props) {
   const isUser = message.role === 'user'
   const isToolCall = message.role === 'tool_call'
 
   if (isUser) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, paddingLeft: 40 }}>
+      <div
+        className={`msg-wrapper${highlighted ? ' highlighted' : ''}`}
+        style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, paddingLeft: 40 }}
+        onContextMenu={onContextMenu}
+      >
         <div
           style={{
             padding: '10px 14px',
@@ -33,7 +39,7 @@ export function ChatMessageItem({ message }: Props) {
 
   if (isToolCall) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 6 }}>
+      <div className={`msg-wrapper${highlighted ? ' highlighted' : ''}`} style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 6 }} onContextMenu={onContextMenu}>
         <div
           style={{
             padding: '4px 10px',
@@ -53,7 +59,11 @@ export function ChatMessageItem({ message }: Props) {
 
   // assistant
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 10, paddingRight: 16 }}>
+    <div
+      className={`msg-wrapper${highlighted ? ' highlighted' : ''}`}
+      style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 10, paddingRight: 16 }}
+      onContextMenu={onContextMenu}
+    >
       <div style={{ color: 'var(--text-1)', fontSize: 14, lineHeight: 1.6, wordBreak: 'break-word', width: '100%' }}>
         {message.content
           ? <MarkdownRenderer content={message.content} compact />
@@ -62,3 +72,4 @@ export function ChatMessageItem({ message }: Props) {
     </div>
   )
 }
+

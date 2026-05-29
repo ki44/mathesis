@@ -3,3 +3,6 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]  # E/F = erreurs de style, I = tri des imports
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]

@@ -8,13 +8,14 @@ export function useChat() {
   const addMessage = useChatStore((s) => s.addMessage)
   const appendDelta = useChatStore((s) => s.appendDelta)
   const setIsStreaming = useChatStore((s) => s.setIsStreaming)
+  const startRerun = useChatStore((s) => s.startRerun)
+  const finalizeRerun = useChatStore((s) => s.finalizeRerun)
+  const clearVariantRuns = useChatStore((s) => s.clearVariantRuns)
   const fetchProposals = useCourseStore((s) => s.fetchProposals)
   const fetchFiles = useCourseStore((s) => s.fetchFiles)
 
-  const sendMessage = useCallback(
-    async (text: string) => {
-      const convId = activeConversationId ?? newConversation()
-      addMessage(convId, { role: 'user', content: text })
+  const stream = useCallback(
+    async (text: string, convId: string, rerun: boolean, variantOverride: Array<{ role: string; content: string }> | null = null) => {
       let asstId = addMessage(convId, { role: 'assistant', content: '' })
       let needNewAsst = false
       setIsStreaming(true)
@@ -23,7 +24,7 @@ export function useChat() {
         const res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, conversation_id: convId }),
+          body: JSON.stringify({ message: text, conversation_id: convId, rerun, variant_override: variantOverride }),
         })
 
         const reader = res.body!.getReader()
@@ -35,7 +36,6 @@ export function useChat() {
           if (done) break
           buffer += decoder.decode(value, { stream: true })
 
-          // SSE messages are separated by double newlines
           const parts = buffer.split('\n\n')
           buffer = parts.pop() ?? ''
 
@@ -73,9 +73,43 @@ export function useChat() {
         setIsStreaming(false)
       }
     },
-    [activeConversationId, newConversation, addMessage, appendDelta, setIsStreaming, fetchProposals, fetchFiles],
+    [addMessage, appendDelta, setIsStreaming, fetchProposals, fetchFiles],
   )
 
-  return { sendMessage }
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const convId = activeConversationId ?? newConversation()
+      addMessage(convId, { role: 'user', content: text })
+
+      // If the user is viewing an older variant (not the most recent run), capture its
+      // assistant messages so the backend can continue from the correct history context.
+      const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+      const vr = conv?.variantRuns
+      const variantOverride =
+        vr && vr.activeIndex < vr.runs.length - 1
+          ? vr.runs[vr.activeIndex]
+              .filter((m) => m.role === 'assistant')
+              .map((m) => ({ role: 'assistant', content: m.content }))
+          : null
+
+      clearVariantRuns(convId)
+      await stream(text, convId, false, variantOverride)
+    },
+    [activeConversationId, newConversation, addMessage, clearVariantRuns, stream],
+  )
+
+  const rerunLastMessage = useCallback(async () => {
+    const convId = activeConversationId
+    if (!convId) return
+    const lastUserText = startRerun(convId)
+    if (!lastUserText) return
+    try {
+      await stream(lastUserText, convId, true)
+    } finally {
+      finalizeRerun(convId)
+    }
+  }, [activeConversationId, startRerun, finalizeRerun, stream])
+
+  return { sendMessage, rerunLastMessage }
 }
 

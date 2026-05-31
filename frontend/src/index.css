@@ -78,10 +78,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .icon-btn { background: none; border: none; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; color: var(--text-2); border-radius: 4px; transition: background 0.1s, color 0.1s; }
 .icon-btn:hover { background: var(--bg-3); color: var(--text-1); }
 
-/* Preview pane cursor position indicator */
-.preview-cursor-line { border-left: 2px solid var(--text-3); padding-left: 6px; margin-left: -8px; transition: border-color 0.15s; }
-.live-preview-inner > :first-child { margin-top: 0 !important; }
-@keyframes preview-cursor-blink { 0%, 100% { opacity: 0.7; } 50% { opacity: 0; } }
+@keyframes preview-cursor-blink { 0%, 100% { opacity: 0.8; } 50% { opacity: 0; } }
 
 
 /* Chat message hover + highlight */

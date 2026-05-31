@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Editor, { DiffEditor, type OnMount } from '@monaco-editor/react'
-import ReactMarkdown from 'react-markdown'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import { MarkdownRenderer, calloutTheme, CALLOUT_RE, calloutMod, remarkCallout, markdownComponents } from './MarkdownRenderer'
+import { MarkdownRenderer, calloutTheme, CALLOUT_RE, calloutMod } from './MarkdownRenderer'
 import { useThemeStore } from '../store/themeStore'
 import type * as Monaco from 'monaco-editor'
 import { useCourseStore } from '../store/courseStore'
@@ -180,31 +177,28 @@ function LiveMarkdownPreview({
   cursorLine,
   cursorColumn,
   scrollRef,
+  showBorder,
 }: {
   content: string
   cursorLine: number
   cursorColumn: number
   scrollRef: React.RefObject<HTMLDivElement | null>
+  showBorder: boolean
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const cursorElemRef = useRef<HTMLDivElement>(null)
 
-  // Position cursor via DOM Range — avoids re-rendering markdown
   useEffect(() => {
     const root = contentRef.current
     const cursorEl = cursorElemRef.current
     if (!root || !cursorEl) return
     const raf = requestAnimationFrame(() => {
       const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-source-line]'))
-      if (elements.length === 0) { cursorEl.style.display = 'none'; return }
-
-      const best = elements.reduce<HTMLElement | null>((acc, el) => {
-        const line = parseInt(el.getAttribute('data-source-line') ?? '0', 10)
-        return line <= cursorLine ? el : acc
-      }, null)
+      const best = elements.reduce<HTMLElement | null>((acc, el) =>
+        parseInt(el.getAttribute('data-source-line') ?? '0') <= cursorLine ? el : acc, null)
       if (!best) { cursorEl.style.display = 'none'; return }
 
-      // Walk text nodes to find the character at cursorColumn
+      // Walk text nodes to find the character offset at cursorColumn
       const walker = document.createTreeWalker(best, NodeFilter.SHOW_TEXT)
       let col = cursorColumn - 1
       let targetNode: Text | null = null
@@ -228,7 +222,6 @@ function LiveMarkdownPreview({
       const rootRect = root.getBoundingClientRect()
       if (rect.height === 0) { cursorEl.style.display = 'none'; return }
       cursorEl.style.display = 'block'
-      cursorEl.style.width = '1px'
       cursorEl.style.top = `${rect.top - rootRect.top}px`
       cursorEl.style.left = `${rect.left - rootRect.left}px`
       cursorEl.style.height = `${rect.height}px`
@@ -239,15 +232,11 @@ function LiveMarkdownPreview({
   return (
     <div
       ref={scrollRef as React.RefObject<HTMLDivElement>}
-      style={{ flex: 1, overflowY: 'auto', borderLeft: '1px solid var(--border)', minWidth: 0 }}
+      style={{ flex: 1, overflowY: 'auto', borderLeft: showBorder ? '1px solid var(--border)' : 'none', minWidth: 0 }}
     >
-      <div ref={contentRef} className="live-preview-inner" style={{ position: 'relative', padding: '24px 32px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box', color: 'var(--text-1)', lineHeight: 1.7, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", fontSize: 14 }}>
-        <div ref={cursorElemRef} style={{ position: 'absolute', display: 'none', width: 1, background: 'var(--text-1)', pointerEvents: 'none', zIndex: 1, opacity: 0.7, animation: 'preview-cursor-blink 1s step-end infinite' }} />
-        <ReactMarkdown
-          remarkPlugins={[remarkMath, remarkCallout]}
-          rehypePlugins={[rehypeKatex]}
-          components={markdownComponents}
-        >{content}</ReactMarkdown>
+      <div ref={contentRef} style={{ position: 'relative' }}>
+        <div ref={cursorElemRef} style={{ position: 'absolute', left: 0, width: 2, background: '#7f6df2', display: 'none', pointerEvents: 'none', zIndex: 1, opacity: 0.8, animation: 'preview-cursor-blink 1s step-end infinite' }} />
+        <MarkdownRenderer content={content} />
       </div>
     </div>
   )
@@ -416,6 +405,7 @@ function PlainEditor() {
           cursorLine={cursorLine}
           cursorColumn={cursorColumn}
           scrollRef={previewScrollRef}
+          showBorder={showEdit}
         />
       </div>
     </div>

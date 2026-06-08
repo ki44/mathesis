@@ -378,7 +378,7 @@ function PlainEditor() {
               height="100%"
               language="markdown"
               theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-              defaultValue={activeFile.content}
+              defaultValue={liveContent}
               onMount={handleMount}
               onChange={(value) => {
                 if (value !== undefined) {

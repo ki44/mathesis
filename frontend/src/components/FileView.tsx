@@ -175,67 +175,41 @@ function computeMergedContent(
 function LiveMarkdownPreview({
   content,
   cursorLine,
-  cursorColumn,
   scrollRef,
   showBorder,
 }: {
   content: string
   cursorLine: number
-  cursorColumn: number
   scrollRef: React.RefObject<HTMLDivElement | null>
   showBorder: boolean
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
-  const cursorElemRef = useRef<HTMLDivElement>(null)
+  const activeBestRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     const root = contentRef.current
-    const cursorEl = cursorElemRef.current
-    if (!root || !cursorEl) return
+    if (!root) return
     const raf = requestAnimationFrame(() => {
+      if (activeBestRef.current) {
+        activeBestRef.current.style.outline = ''
+        activeBestRef.current = null
+      }
       const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-source-line]'))
       const best = elements.reduce<HTMLElement | null>((acc, el) =>
         parseInt(el.getAttribute('data-source-line') ?? '0') <= cursorLine ? el : acc, null)
-      if (!best) { cursorEl.style.display = 'none'; return }
-
-      // Walk text nodes to find the character offset at cursorColumn
-      const walker = document.createTreeWalker(best, NodeFilter.SHOW_TEXT)
-      let col = cursorColumn - 1
-      let targetNode: Text | null = null
-      let nodeOffset = 0
-      let node: Node | null
-      while ((node = walker.nextNode())) {
-        const t = node as Text
-        if (col <= t.length) { targetNode = t; nodeOffset = col; break }
-        col -= t.length
-      }
-
-      const range = document.createRange()
-      if (targetNode) {
-        range.setStart(targetNode, nodeOffset)
-      } else {
-        range.selectNodeContents(best)
-        range.collapse(false)
-      }
-      range.collapse(true)
-      const rect = range.getBoundingClientRect()
-      const rootRect = root.getBoundingClientRect()
-      if (rect.height === 0) { cursorEl.style.display = 'none'; return }
-      cursorEl.style.display = 'block'
-      cursorEl.style.top = `${rect.top - rootRect.top}px`
-      cursorEl.style.left = `${rect.left - rootRect.left}px`
-      cursorEl.style.height = `${rect.height}px`
+      if (!best) return
+      best.style.outline = '2px solid rgba(127, 109, 242, 0.35)'
+      activeBestRef.current = best
     })
     return () => cancelAnimationFrame(raf)
-  }, [cursorLine, cursorColumn, content])
+  }, [cursorLine, content])
 
   return (
     <div
       ref={scrollRef as React.RefObject<HTMLDivElement>}
       style={{ flex: 1, overflowY: 'auto', borderLeft: showBorder ? '1px solid var(--border)' : 'none', minWidth: 0 }}
     >
-      <div ref={contentRef} style={{ position: 'relative' }}>
-        <div ref={cursorElemRef} style={{ position: 'absolute', left: 0, width: 2, background: '#7f6df2', display: 'none', pointerEvents: 'none', zIndex: 1, opacity: 0.8, animation: 'preview-cursor-blink 1s step-end infinite' }} />
+      <div ref={contentRef}>
         <MarkdownRenderer content={content} />
       </div>
     </div>
@@ -257,7 +231,6 @@ function PlainEditor() {
   const [isDirty, setIsDirty] = useState(false)
   const [liveContent, setLiveContent] = useState(activeFile?.content ?? '')
   const [cursorLine, setCursorLine] = useState(1)
-  const [cursorColumn, setCursorColumn] = useState(1)
   const [showEdit, setShowEdit] = useState(true)
   const currentValueRef = useRef<string>('')
   const savedContentRef = useRef<string>('')
@@ -292,7 +265,6 @@ function PlainEditor() {
     })
     editor.onDidChangeCursorPosition((e) => {
       setCursorLine(e.position.lineNumber)
-      setCursorColumn(e.position.column)
     })
     editor.onDidScrollChange(() => {
       const pane = previewScrollRef.current
@@ -403,7 +375,6 @@ function PlainEditor() {
         <LiveMarkdownPreview
           content={liveContent}
           cursorLine={cursorLine}
-          cursorColumn={cursorColumn}
           scrollRef={previewScrollRef}
           showBorder={showEdit}
         />

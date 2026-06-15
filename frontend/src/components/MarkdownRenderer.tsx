@@ -13,12 +13,12 @@ export function calloutTheme(type?: string): { border: string; bg: string; title
   }
 }
 
-function CalloutBlock({ title, defaultOpen, permanent, calloutType, children }: { title: string; defaultOpen: boolean; permanent?: boolean; calloutType?: string; children: ReactNode }) {
+function CalloutBlock({ title, defaultOpen, permanent, calloutType, sourceLine, children }: { title: string; defaultOpen: boolean; permanent?: boolean; calloutType?: string; sourceLine?: number; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen)
   const theme = calloutTheme(calloutType)
   const isOpen = permanent || open
   return (
-    <div style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
+    <div data-source-line={sourceLine} style={{ border: `1px solid ${theme.border}`, borderRadius: 6, margin: '1em 0', overflow: 'hidden', background: theme.bg }}>
       <div
         onClick={permanent ? undefined : () => setOpen(o => !o)}
         style={{ padding: '8px 14px', background: 'var(--bg-2)', color: theme.title, fontWeight: 600, cursor: permanent ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, userSelect: 'none' }}
@@ -63,6 +63,7 @@ export function remarkCallout() {
                 'data-callout-permanent': String(permanent),
                 'data-callout-title': title || type,
                 'data-callout-type': type.toLowerCase(),
+                'data-source-line': String(node.position?.start?.line ?? ''),
               }}
               node.children = node.children.slice(1)
             }
@@ -158,6 +159,7 @@ export const markdownComponents: React.ComponentProps<typeof ReactMarkdown>['com
           defaultOpen={props['data-callout-open'] === 'true'}
           permanent={props['data-callout-permanent'] === 'true'}
           calloutType={props['data-callout-type'] as string}
+          sourceLine={props['data-source-line'] ? Number(props['data-source-line']) : undefined}
         >
           {children}
         </CalloutBlock>

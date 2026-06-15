@@ -342,15 +342,14 @@ function PlainEditor() {
         </button>
       </div>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {showEdit && (
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, display: showEdit ? 'flex' : 'none' }}>
             <Editor
               key={`${activeFilename}-${revision}`}
               width="100%"
               height="100%"
               language="markdown"
               theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-              defaultValue={liveContent}
+              defaultValue={activeFile.content}
               onMount={handleMount}
               onChange={(value) => {
                 if (value !== undefined) {
@@ -371,7 +370,6 @@ function PlainEditor() {
               }}
             />
           </div>
-        )}
         <LiveMarkdownPreview
           content={liveContent}
           cursorLine={cursorLine}

@@ -170,22 +170,72 @@ function computeMergedContent(
   return result.join('\n')
 }
 
+// ─── Live preview pane ────────────────────────────────────────────────────────
+
+function LiveMarkdownPreview({
+  content,
+  cursorLine,
+  scrollRef,
+  showBorder,
+}: {
+  content: string
+  cursorLine: number
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  showBorder: boolean
+}) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const activeBestRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    const raf = requestAnimationFrame(() => {
+      if (activeBestRef.current) {
+        activeBestRef.current.style.outline = ''
+        activeBestRef.current = null
+      }
+      const elements = Array.from(root.querySelectorAll<HTMLElement>('[data-source-line]'))
+      const best = elements.reduce<HTMLElement | null>((acc, el) =>
+        parseInt(el.getAttribute('data-source-line') ?? '0') <= cursorLine ? el : acc, null)
+      if (!best) return
+      best.style.outline = '2px solid rgba(127, 109, 242, 0.35)'
+      activeBestRef.current = best
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [cursorLine, content])
+
+  return (
+    <div
+      ref={scrollRef as React.RefObject<HTMLDivElement>}
+      style={{ flex: 1, overflowY: 'auto', borderLeft: showBorder ? '1px solid var(--border)' : 'none', minWidth: 0 }}
+    >
+      <div ref={contentRef}>
+        <MarkdownRenderer content={content} />
+      </div>
+    </div>
+  )
+}
+
 // ─── Plain editor (no proposal) ──────────────────────────────────────────────
 
-function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPreview: React.Dispatch<React.SetStateAction<boolean>> }) {
+function PlainEditor() {
   const files = useCourseStore((s) => s.files)
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const saveFile = useCourseStore((s) => s.saveFile)
   const fileRevisions = useCourseStore((s) => s.fileRevisions)
-
-  const [isDirty, setIsDirty] = useState(false)
-  const currentValueRef = useRef<string>('')
-  const savedContentRef = useRef<string>('')
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { theme } = useThemeStore()
 
   const activeFile = files.find((f) => f.filename === activeFilename)
   const revision = fileRevisions[activeFilename ?? ''] ?? 0
+
+  const [isDirty, setIsDirty] = useState(false)
+  const [liveContent, setLiveContent] = useState(activeFile?.content ?? '')
+  const [cursorLine, setCursorLine] = useState(1)
+  const [showEdit, setShowEdit] = useState(true)
+  const currentValueRef = useRef<string>('')
+  const savedContentRef = useRef<string>('')
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previewScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     clearTimeout(debounceTimerRef.current ?? undefined)
@@ -193,6 +243,7 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
     const content = activeFile?.content ?? ''
     currentValueRef.current = content
     savedContentRef.current = content
+    setLiveContent(content)
   }, [activeFilename, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveRef = useRef<() => Promise<void>>(async () => {})
@@ -203,19 +254,6 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
     setIsDirty(false)
   }
 
-  // Ctrl+S while in preview mode (Monaco loses focus behind the overlay so its binding doesn't fire)
-  useEffect(() => {
-    if (!isPreview) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault()
-        void saveRef.current()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isPreview])
-
   const handleMount: OnMount = (editor, monacoInstance) => {
     editor.addCommand(
       monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
@@ -224,6 +262,15 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
     editor.onDidBlurEditorText(() => {
       clearTimeout(debounceTimerRef.current ?? undefined)
       void saveRef.current()
+    })
+    editor.onDidChangeCursorPosition((e) => {
+      setCursorLine(e.position.lineNumber)
+    })
+    editor.onDidScrollChange(() => {
+      const pane = previewScrollRef.current
+      if (!pane) return
+      const scrollRatio = editor.getScrollTop() / Math.max(1, editor.getScrollHeight() - editor.getLayoutInfo().height)
+      pane.scrollTop = scrollRatio * Math.max(0, pane.scrollHeight - pane.clientHeight)
     })
     editor.onKeyDown((e) => {
       const sel = editor.getSelection()
@@ -288,45 +335,47 @@ function PlainEditor({ isPreview, setIsPreview }: { isPreview: boolean; setIsPre
           <span title="Unsaved changes (Ctrl+S)" style={{ color: '#f9c74f', fontSize: 12 }}>●</span>
         )}
         <button
-          onClick={() => setIsPreview((v) => !v)}
+          onClick={() => setShowEdit((v) => !v)}
           style={{ background: 'none', border: '1px solid var(--border-2)', borderRadius: 4, color: 'var(--text-2)', padding: '2px 10px', fontSize: 12, cursor: 'pointer' }}
         >
-          {isPreview ? 'Edit' : 'Preview'}
+          {showEdit ? 'Hide edit' : 'Show edit'}
         </button>
       </div>
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Preview overlay — sits on top of Monaco so the editor stays mounted and undo history is preserved */}
-        {isPreview && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 1, overflowY: 'auto', background: 'var(--bg-1)' }}>
-            <MarkdownRenderer content={isDirty ? currentValueRef.current : activeFile.content} />
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, display: showEdit ? 'flex' : 'none' }}>
+            <Editor
+              key={`${activeFilename}-${revision}`}
+              width="100%"
+              height="100%"
+              language="markdown"
+              theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+              defaultValue={activeFile.content}
+              onMount={handleMount}
+              onChange={(value) => {
+                if (value !== undefined) {
+                  currentValueRef.current = value
+                  setLiveContent(value)
+                  setIsDirty(value !== savedContentRef.current)
+                  clearTimeout(debounceTimerRef.current ?? undefined)
+                  debounceTimerRef.current = setTimeout(() => void saveRef.current(), 2000)
+                }
+              }}
+              options={{
+                minimap: { enabled: false },
+                wordWrap: 'on',
+                fontSize: 14,
+                scrollBeyondLastLine: false,
+                lineNumbers: 'off',
+                padding: { top: 24 },
+              }}
+            />
           </div>
-        )}
-        <div style={{ position: 'absolute', inset: 0 }}>
-          <Editor
-            key={`${activeFilename}-${revision}`}
-            width="100%"
-            height="100%"
-            language="markdown"
-            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-            defaultValue={activeFile.content}
-            onMount={handleMount}
-            onChange={(value) => {
-              if (value !== undefined) {
-                currentValueRef.current = value
-                setIsDirty(value !== savedContentRef.current)
-                clearTimeout(debounceTimerRef.current ?? undefined)
-                debounceTimerRef.current = setTimeout(() => void saveRef.current(), 2000)
-              }
-            }}
-            options={{
-              minimap: { enabled: false },
-              wordWrap: 'on',
-              fontSize: 14,
-              scrollBeyondLastLine: false,
-              lineNumbers: 'off',
-            }}
-          />
-        </div>
+        <LiveMarkdownPreview
+          content={liveContent}
+          cursorLine={cursorLine}
+          scrollRef={previewScrollRef}
+          showBorder={showEdit}
+        />
       </div>
     </div>
   )
@@ -616,11 +665,10 @@ export function FileView() {
   const activeFilename = useCourseStore((s) => s.activeFilename)
   const proposals = useCourseStore((s) => s.proposals)
   const files = useCourseStore((s) => s.files)
-  const [isPreview, setIsPreview] = useState(true)
+  const [isPreview, setIsPreview] = useState(false)
   const hasProposal = activeFilename ? !!proposals[activeFilename] : false
   const hasFile = files.some((f) => f.filename === activeFilename)
 
-  useEffect(() => { setIsPreview(true) }, [activeFilename])
   useEffect(() => { if (hasProposal) setIsPreview(false) }, [hasProposal])
 
   if (!activeFilename || !hasFile) {
@@ -640,5 +688,5 @@ export function FileView() {
     )
   }
 
-  return hasProposal ? <DiffReview isPreview={isPreview} setIsPreview={setIsPreview} /> : <PlainEditor isPreview={isPreview} setIsPreview={setIsPreview} />
+  return hasProposal ? <DiffReview isPreview={isPreview} setIsPreview={setIsPreview} /> : <PlainEditor />
 }

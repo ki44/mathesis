@@ -3,6 +3,7 @@ import { useCourseStore } from '../store/courseStore'
 import { useContextMenuClose } from '../hooks/useContextMenuClose'
 import { useThemeStore } from '../store/themeStore'
 import { ctxMenuStyle } from './ctxMenuStyle'
+import { exportFile, exportFolder, exportProject } from '../utils/export'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -150,6 +151,14 @@ const IcoSun = () => (
 const IcoMoon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+  </svg>
+)
+
+const IcoExport = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
   </svg>
 )
 
@@ -305,6 +314,16 @@ export function Sidebar() {
     pasteItem(targetFolder).catch(() => {})
   }
 
+  const handleExport = (node: TreeNode) => {
+    setCtxMenu(null)
+    if (node.kind === 'file') {
+      const file = files.find((f) => f.filename === node.path)
+      if (file) exportFile(file.filename, file.content)
+    } else {
+      exportFolder(node.path, files).catch(() => {})
+    }
+  }
+
   // ── Drag and drop ──────────────────────────────────────────────────────────
 
   const handleDragStart = (e: React.DragEvent, path: string) => {
@@ -402,6 +421,7 @@ export function Sidebar() {
           <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
             <button onClick={() => startCreating(null, 'file')} title="New file" className="icon-btn"><IcoNewFile /></button>
             <button onClick={() => startCreating(null, 'folder')} title="New folder" className="icon-btn"><IcoNewFolder /></button>
+            <button onClick={() => exportProject(files).catch(() => {})} title="Export project" className="icon-btn"><IcoExport /></button>
             <button onClick={toggle} title="Toggle theme" className="icon-btn">
               {theme === 'dark' ? <IcoSun /> : <IcoMoon />}
             </button>
@@ -462,6 +482,7 @@ export function Sidebar() {
             onDuplicate={() => ctxMenu.node.kind === 'file' ? handleDuplicate(ctxMenu.node) : void 0}
             onPaste={() => handlePaste(ctxMenu.node.kind === 'folder' ? ctxMenu.node.path || null : getParent(ctxMenu.node.path))}
             onDelete={() => ctxMenu.node.path ? requestDelete(ctxMenu.node) : void 0}
+            onExport={() => handleExport(ctxMenu.node)}
           />
         )}
       </div>
@@ -617,9 +638,10 @@ interface ContextMenuProps {
   onDuplicate: () => void
   onPaste: () => void
   onDelete: () => void
+  onExport: () => void
 }
 
-function ContextMenu({ menu, clipboard, onClose, onNewFile, onNewFolder, onRename, onCopy, onCut, onDuplicate, onPaste, onDelete }: ContextMenuProps) {
+function ContextMenu({ menu, clipboard, onClose, onNewFile, onNewFolder, onRename, onCopy, onCut, onDuplicate, onPaste, onDelete, onExport }: ContextMenuProps) {
   const hasPath = !!menu.node.path
   const isFolder = menu.node.kind === 'folder'
   const isFile = menu.node.kind === 'file'
@@ -633,6 +655,7 @@ function ContextMenu({ menu, clipboard, onClose, onNewFile, onNewFolder, onRenam
       { label: 'Cut', action: onCut },
       { label: 'Copy', action: onCopy },
       ...(isFile ? [{ label: 'Duplicate', action: onDuplicate as () => void }] : []),
+      { label: 'Export', action: onExport },
     ] : []),
     ...(clipboard ? [{ label: 'Paste', action: onPaste }] : []),
     ...(hasPath ? [null, { label: isFolder ? 'Delete Folder' : 'Delete', action: onDelete as () => void, danger: true }] : []),

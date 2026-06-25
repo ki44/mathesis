@@ -2,6 +2,7 @@ import json
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
@@ -29,6 +30,8 @@ from schemas.schemas import (
     Proposal,
     RenameFileRequest,
 )
+from utils.messages import find_history_slice_end, to_display_messages
+from utils.prompts import load_prompt
 
 load_dotenv()
 
@@ -48,14 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_SYSTEM_PROMPT = """\
-Tu es Mathesis, un tuteur de mathématiques expert. Tu rédiges des cours de maths \
-clairs et rigoureux en Markdown (syntaxe compatible Obsidian). \
-Lorsque l'utilisateur te demande de créer ou modifier un cours, utilise l'outil \
-propose_course_update pour soumettre le contenu. L'utilisateur verra la diff et \
-pourra accepter ou rejeter les changements. Pour voir le contenu actuel d'un fichier, \
-utilise read_course. Pour lister les fichiers existants, utilise list_course_files.\
-"""
+_SYSTEM_PROMPT = load_prompt(Path(__file__).parent / "prompts" / "system.md")
 
 agent = Agent(
     system_prompt=_SYSTEM_PROMPT,
@@ -66,58 +62,6 @@ agent = Agent(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _to_display_messages(llm_history: list[dict]) -> list[dict]:
-    """Derive frontend-displayable messages from the raw LLM chat history."""
-    result = []
-    for msg in llm_history:
-        role = msg.get("role")
-        if role == "user":
-            content = msg.get("content")
-            if isinstance(content, str):
-                result.append({"role": "user", "content": content})
-        elif role == "assistant":
-            content = msg.get("content")
-            if content:
-                result.append({"role": "assistant", "content": content})
-            for tc in msg.get("tool_calls") or []:
-                name = (tc.get("function") or {}).get("name", "unknown")
-                result.append({"role": "tool_call", "content": f"{name}"})
-    return result
-
-
-def _find_history_slice_end(history: list[dict], display_index: int) -> int:
-    """Return exclusive end index into history for the given 0-based display message index.
-
-    Extends the slice past any immediately-following role='tool' messages so that an
-    assistant message with tool_calls is never left without its tool results.
-    """
-
-    def _end(i: int) -> int:
-        end = i + 1
-        while end < len(history) and history[end].get("role") == "tool":
-            end += 1
-        return end
-
-    count = 0
-    for i, msg in enumerate(history):
-        role = msg.get("role")
-        if role == "user":
-            if isinstance(msg.get("content"), str):
-                if count == display_index:
-                    return _end(i)
-                count += 1
-        elif role == "assistant":
-            if msg.get("content"):
-                if count == display_index:
-                    return _end(i)
-                count += 1
-            for _ in msg.get("tool_calls") or []:
-                if count == display_index:
-                    return _end(i)
-                count += 1
-    return len(history)
 
 
 async def _fetchone_or_404(db: aiosqlite.Connection, query: str, params: tuple[Any, ...], detail: str) -> aiosqlite.Row:
@@ -228,7 +172,7 @@ async def get_conversation_messages(conv_id: str, db: aiosqlite.Connection = Dep
         db, "SELECT llm_history FROM conversations WHERE id = ?", (conv_id,), "Conversation not found"
     )
     history = json.loads(row["llm_history"])
-    return _to_display_messages(history)
+    return to_display_messages(history)
 
 
 @app.delete("/api/conversations/{conv_id}", status_code=204)
@@ -263,7 +207,7 @@ async def fork_conversation(conv_id: str, body: ForkRequest, db: aiosqlite.Conne
         db, "SELECT llm_history FROM conversations WHERE id = ?", (conv_id,), "Conversation not found"
     )
     history: list[dict] = json.loads(row["llm_history"])
-    forked_history = history[: _find_history_slice_end(history, body.message_index)]
+    forked_history = history[: find_history_slice_end(history, body.message_index)]
     new_id = str(uuid.uuid4())
     c = next((m.get("content", "") for m in forked_history if m.get("role") == "user"), "")
     title = ("Fork: " + c[:35] + ("..." if len(c) > 35 else "")) if c else "Forked conversation"

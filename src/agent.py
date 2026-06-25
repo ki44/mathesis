@@ -8,7 +8,7 @@ from litellm import Message, ModelResponse, acompletion
 
 from agent_tools.storage.db_tools import list_course_files, propose_course_update, read_course
 from agent_tools.tools_utils import ToolFunction
-from schemas.schemas import ModelConfiguration
+from config import ModelConfiguration
 
 load_dotenv()
 # litellm._logging._turn_on_debug()
